@@ -2,11 +2,6 @@ import type { Section } from "@/shared/schema"
 import { findNearestOccurrence } from "./text-index"
 
 /**
- * Drives active-paragraph dimming. The paragraph whose center is closest to
- * the scroll-container's viewport center is marked `is-active`; the article
- * root has `data-focus="on"` so the CSS dims the rest.
- */
-/**
  * Vertical inset (in % of scroll-host height) that defines the focus band.
  * 25% top + 25% bottom = the middle 50% of the viewport is the active zone.
  * Any paragraph whose rect overlaps this band is marked `is-active`. Fast
@@ -22,14 +17,11 @@ export class ActiveParagraph {
 
   constructor(scrollHost: HTMLElement, articleRoot: HTMLElement) {
     this.articleRoot = articleRoot
-    this.observer = new IntersectionObserver(
-      (entries) => this.onChange(entries),
-      {
-        root: scrollHost,
-        rootMargin: `-${BAND_INSET_PERCENT}% 0px -${BAND_INSET_PERCENT}% 0px`,
-        threshold: 0,
-      },
-    )
+    this.observer = new IntersectionObserver((entries) => this.onChange(entries), {
+      root: scrollHost,
+      rootMargin: `-${BAND_INSET_PERCENT}% 0px -${BAND_INSET_PERCENT}% 0px`,
+      threshold: 0,
+    })
     this.attach()
   }
 
