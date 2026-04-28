@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pnpm --version)",
+      "Bash(npm --version)",
+      "Read(//Users/e.amir/.nvm/versions/**)",
+      "Read(//Users/e.amir/.local/share/fnm/**)",
+      "Bash(brew --version)",
+      "Bash(git init *)",
+      "Bash(git add *)",
+      "Bash(git commit *)"
+    ]
+  }
+}
