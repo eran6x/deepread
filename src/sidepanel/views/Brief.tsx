@@ -12,6 +12,7 @@ interface AnalysisMeta {
   provider: Provider
   model: string
   latencyMs: number | null
+  tabId: number
 }
 
 type State =
@@ -63,6 +64,7 @@ export function Brief() {
           provider: msg.provider,
           model: msg.model,
           latencyMs: msg.latencyMs,
+          tabId: tab.id ?? -1,
         }
         setState((prev) =>
           prev.kind === "running"
@@ -118,7 +120,9 @@ export function Brief() {
     <div className="space-y-4 p-4">
       <div className="flex items-center justify-between gap-2">
         <PhaseLine phase={phase} />
-        {state.kind === "done" ? <ActionBar result={state.result} article={state.article} /> : null}
+        {state.kind === "done" ? (
+          <ActionBar result={state.result} article={state.article} meta={state.meta} />
+        ) : null}
       </div>
       <VerdictCard partial={partial} />
       <BriefCard partial={partial} />
@@ -130,8 +134,17 @@ export function Brief() {
   )
 }
 
-function ActionBar({ result, article }: { result: AnalysisResult; article: ArticleMeta }) {
+function ActionBar({
+  result,
+  article,
+  meta,
+}: {
+  result: AnalysisResult
+  article: ArticleMeta
+  meta: AnalysisMeta
+}) {
   const [copied, setCopied] = useState(false)
+  const [readerErr, setReaderErr] = useState<string | null>(null)
   const markdown = useMemo(() => formatAsMarkdown(result, article), [result, article])
 
   async function copy() {
@@ -149,10 +162,35 @@ function ActionBar({ result, article }: { result: AnalysisResult; article: Artic
     downloadMarkdown(markdown, filename)
   }
 
+  async function openInReader() {
+    setReaderErr(null)
+    try {
+      const response = await chrome.tabs.sendMessage(meta.tabId, {
+        kind: "reader.open",
+        result,
+      } as const)
+      if (response?.kind === "reader.error") setReaderErr(response.reason)
+    } catch (err) {
+      setReaderErr(
+        err instanceof Error
+          ? `${err.message}. Try reloading the page and re-analyzing.`
+          : String(err),
+      )
+    }
+  }
+
   return (
-    <div className="flex shrink-0 gap-1.5">
-      <ActionButton onClick={copy}>{copied ? "Copied" : "Copy"}</ActionButton>
-      <ActionButton onClick={save}>Save .md</ActionButton>
+    <div className="flex shrink-0 flex-col items-end gap-1">
+      <div className="flex gap-1.5">
+        <ActionButton onClick={openInReader}>Open reader</ActionButton>
+        <ActionButton onClick={copy}>{copied ? "Copied" : "Copy"}</ActionButton>
+        <ActionButton onClick={save}>Save .md</ActionButton>
+      </div>
+      {readerErr ? (
+        <p className="max-w-xs text-right text-[11px] text-red-700 dark:text-red-400">
+          {readerErr}
+        </p>
+      ) : null}
     </div>
   )
 }

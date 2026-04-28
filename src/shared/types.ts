@@ -45,6 +45,10 @@ export type RuntimeMessage =
   | { kind: "feedback.append"; entry: FeedbackEntry }
   | { kind: "feedback.list" }
   | { kind: "feedback.get"; contentHash: string }
+  | { kind: "reader.open"; result: AnalysisResult }
+  | { kind: "reader.close" }
+  | { kind: "reader.ack"; ok: true }
+  | { kind: "reader.error"; reason: string }
 
 export type PortMessage =
   | { kind: "analysis.partial"; result: PartialAnalysisResult }

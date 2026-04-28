@@ -1,27 +1,69 @@
 import type { ExtractedArticle, RuntimeMessage } from "@/shared/types"
 import { Readability, isProbablyReaderable } from "@mozilla/readability"
+import { closeReader, openReader } from "./reader"
+
+let cachedArticle: ExtractedArticle | null = null
+let cachedFromUrl: string | null = null
 
 chrome.runtime.onMessage.addListener((msg: RuntimeMessage, _sender, sendResponse) => {
-  if (msg.kind !== "extract.request") return false
+  if (msg.kind === "extract.request") {
+    handleExtract(sendResponse)
+    return false
+  }
 
+  if (msg.kind === "reader.open") {
+    handleReaderOpen(msg.result, sendResponse)
+    return false
+  }
+
+  if (msg.kind === "reader.close") {
+    closeReader()
+    sendResponse({ kind: "reader.ack", ok: true } satisfies RuntimeMessage)
+    return false
+  }
+
+  return false
+})
+
+function handleExtract(sendResponse: (m: RuntimeMessage) => void) {
   try {
     const article = extractArticle()
     if (!article) {
-      sendResponse({
-        kind: "extract.error",
-        reason: "not_readerable",
-      } satisfies RuntimeMessage)
-      return false
+      sendResponse({ kind: "extract.error", reason: "not_readerable" })
+      return
     }
-    sendResponse({ kind: "extract.response", article } satisfies RuntimeMessage)
+    cachedArticle = article
+    cachedFromUrl = location.href
+    sendResponse({ kind: "extract.response", article })
   } catch (err) {
     sendResponse({
       kind: "extract.error",
       reason: err instanceof Error ? err.message : String(err),
-    } satisfies RuntimeMessage)
+    })
   }
-  return false
-})
+}
+
+function handleReaderOpen(
+  result: Parameters<typeof openReader>[0]["result"],
+  sendResponse: (m: RuntimeMessage) => void,
+) {
+  if (!cachedArticle || cachedFromUrl !== location.href) {
+    sendResponse({
+      kind: "reader.error",
+      reason: "Article not extracted for this page. Re-run analysis.",
+    })
+    return
+  }
+  try {
+    openReader({ article: cachedArticle, result })
+    sendResponse({ kind: "reader.ack", ok: true })
+  } catch (err) {
+    sendResponse({
+      kind: "reader.error",
+      reason: err instanceof Error ? err.message : String(err),
+    })
+  }
+}
 
 function extractArticle(): ExtractedArticle | null {
   if (!isProbablyReaderable(document, { minContentLength: 500 })) return null
