@@ -1,4 +1,5 @@
 import type { Provider } from "./constants"
+import type { FeedbackEntry } from "./feedback"
 import type { AnalysisResult, DefinitionResult, PartialAnalysisResult } from "./schema"
 
 export interface OllamaConfig {
@@ -41,10 +42,21 @@ export type RuntimeMessage =
   | { kind: "secrets.set"; provider: "anthropic" | "deepseek"; key: string }
   | { kind: "secrets.status"; provider: "anthropic" | "deepseek" }
   | { kind: "provider.test"; provider: Provider }
+  | { kind: "feedback.append"; entry: FeedbackEntry }
+  | { kind: "feedback.list" }
+  | { kind: "feedback.get"; contentHash: string }
 
 export type PortMessage =
   | { kind: "analysis.partial"; result: PartialAnalysisResult }
-  | { kind: "analysis.complete"; result: AnalysisResult }
+  | {
+      kind: "analysis.complete"
+      result: AnalysisResult
+      contentHash: string
+      wordCount: number
+      provider: Provider
+      model: string
+      latencyMs: number | null
+    }
   | { kind: "analysis.error"; reason: string }
   | { kind: "analysis.status"; phase: AnalysisPhase }
 

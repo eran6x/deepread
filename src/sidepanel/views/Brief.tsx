@@ -1,8 +1,18 @@
+import type { Provider } from "@/shared/constants"
+import { type FeedbackEntry, buildMetrics } from "@/shared/feedback"
 import type { AnalysisResult } from "@/shared/schema"
 import type { AnalysisPhase, PartialAnalysisResult } from "@/shared/types"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { type ArticleMeta, downloadMarkdown, formatAsMarkdown, slug } from "../format"
-import { getActiveTab, openAnalysisPort } from "../messaging"
+import { getActiveTab, openAnalysisPort, send } from "../messaging"
+
+interface AnalysisMeta {
+  contentHash: string
+  wordCount: number
+  provider: Provider
+  model: string
+  latencyMs: number | null
+}
 
 type State =
   | { kind: "idle" }
@@ -12,7 +22,12 @@ type State =
       partial: PartialAnalysisResult
       article: ArticleMeta
     }
-  | { kind: "done"; result: AnalysisResult; article: ArticleMeta }
+  | {
+      kind: "done"
+      result: AnalysisResult
+      article: ArticleMeta
+      meta: AnalysisMeta
+    }
   | { kind: "error"; reason: string }
 
 export function Brief() {
@@ -42,10 +57,17 @@ export function Brief() {
       } else if (msg.kind === "analysis.partial") {
         setState((prev) => (prev.kind === "running" ? { ...prev, partial: msg.result } : prev))
       } else if (msg.kind === "analysis.complete") {
+        const meta: AnalysisMeta = {
+          contentHash: msg.contentHash,
+          wordCount: msg.wordCount,
+          provider: msg.provider,
+          model: msg.model,
+          latencyMs: msg.latencyMs,
+        }
         setState((prev) =>
           prev.kind === "running"
-            ? { kind: "done", result: msg.result, article: prev.article }
-            : { kind: "done", result: msg.result, article },
+            ? { kind: "done", result: msg.result, article: prev.article, meta }
+            : { kind: "done", result: msg.result, article, meta },
         )
       } else if (msg.kind === "analysis.error") {
         setState({ kind: "error", reason: msg.reason })
@@ -101,6 +123,9 @@ export function Brief() {
       <VerdictCard partial={partial} />
       <BriefCard partial={partial} />
       <TopicsRow partial={partial} />
+      {state.kind === "done" ? (
+        <FeedbackBar result={state.result} article={state.article} meta={state.meta} />
+      ) : null}
     </div>
   )
 }
@@ -144,12 +169,102 @@ function ActionButton(props: { onClick: () => void; children: React.ReactNode })
   )
 }
 
+function FeedbackBar({
+  result,
+  article,
+  meta,
+}: {
+  result: AnalysisResult
+  article: ArticleMeta
+  meta: AnalysisMeta
+}) {
+  const [rating, setRating] = useState<number | null>(null)
+  const [savedRating, setSavedRating] = useState<number | null>(null)
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Pre-fill from previously saved feedback for this article
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      const existing = await send<FeedbackEntry | null>({
+        kind: "feedback.get",
+        contentHash: meta.contentHash,
+      })
+      if (!cancelled && existing) {
+        setRating(existing.rating)
+        setSavedRating(existing.rating)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [meta.contentHash])
+
+  function onChange(value: number) {
+    setRating(value)
+    if (saveTimer.current) clearTimeout(saveTimer.current)
+    saveTimer.current = setTimeout(() => {
+      void persist(value)
+    }, 350)
+  }
+
+  async function persist(value: number) {
+    const entry: FeedbackEntry = {
+      contentHash: meta.contentHash,
+      ts: Date.now(),
+      rating: value,
+      title: article.title.slice(0, 140),
+      url: article.url,
+      wordCount: meta.wordCount,
+      provider: meta.provider,
+      model: meta.model,
+      latencyMs: meta.latencyMs,
+      metrics: buildMetrics(result),
+    }
+    await send({ kind: "feedback.append", entry })
+    setSavedRating(value)
+  }
+
+  const display = rating ?? 5
+  const isSaved = savedRating != null && savedRating === rating
+
+  return (
+    <div className="rounded-md border border-neutral-200 p-3 dark:border-neutral-800">
+      <div className="mb-2 flex items-baseline justify-between">
+        <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+          Rate this analysis
+        </p>
+        <span className="text-sm font-medium tabular-nums">
+          {rating != null ? `${rating}/10` : "—/10"}
+        </span>
+      </div>
+      <input
+        type="range"
+        min={1}
+        max={10}
+        step={1}
+        value={display}
+        onChange={(e) => onChange(Number(e.target.value))}
+        aria-label="Rate this analysis from 1 (worst) to 10 (best)"
+        className="deepread-slider w-full"
+      />
+      <div className="mt-1 flex justify-between text-[10px] uppercase tracking-wide text-neutral-400">
+        <span>1 · poor</span>
+        <span>10 · great</span>
+      </div>
+      {isSaved && rating != null ? (
+        <p className="mt-2 text-[11px] text-green-700 dark:text-green-400">Saved · {rating}/10</p>
+      ) : null}
+    </div>
+  )
+}
+
 function PhaseLine({ phase }: { phase: AnalysisPhase }) {
   const labels: Record<AnalysisPhase, string> = {
     idle: "",
     extracting: "Extracting article…",
     "cache-hit": "Loaded from cache",
-    "calling-llm": "Calling Claude…",
+    "calling-llm": "Calling LLM…",
     streaming: "Analyzing…",
     done: "Done",
     error: "Error",
@@ -239,7 +354,15 @@ function humanizeError(reason: string): string {
   if (reason.includes("no_api_key")) return "No API key set. Add one in Settings to analyze pages."
   if (reason.startsWith("auth")) return "Invalid API key. Check it in Settings."
   if (reason.startsWith("network")) return "Network error. Check your connection and retry."
-  if (reason.startsWith("rate_limit")) return "Rate limited by Anthropic. Try again in a minute."
+  if (reason.startsWith("rate_limit")) return "Rate limited. Try again in a minute."
+  if (reason.startsWith("endpoint_unreachable"))
+    return "Cannot reach the configured endpoint. Check Settings."
+  if (reason.startsWith("model_missing"))
+    return "Model not found. Check the model name in Settings."
+  if (reason.startsWith("no_tool_use"))
+    return "This model doesn't support tool calling. Pick another model in Settings."
+  if (reason.includes("missing_config"))
+    return "Provider configuration is incomplete. See Settings."
   if (reason.includes("not_readerable"))
     return "This page doesn't look like an article. Open a long-form article and try again."
   if (reason.includes("Could not establish connection"))

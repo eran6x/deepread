@@ -1,4 +1,11 @@
-import { DEFAULTS, PORTS, type Provider } from "@/shared/constants"
+import {
+  ANTHROPIC_MODELS,
+  DEEPSEEK_MODELS,
+  DEFAULTS,
+  PORTS,
+  type Provider,
+} from "@/shared/constants"
+import { approxWordCount } from "@/shared/feedback"
 import type {
   AnalysisPhase,
   ExtractedArticle,
@@ -6,7 +13,14 @@ import type {
   ProviderTestResult,
   RuntimeMessage,
 } from "@/shared/types"
-import { getCachedAnalysis, hashText, setCachedAnalysis } from "./cache/analysis"
+import {
+  appendFeedback,
+  getCachedAnalysis,
+  getFeedback,
+  hashText,
+  listFeedback,
+  setCachedAnalysis,
+} from "./cache/analysis"
 import { LLMError } from "./llm/client"
 import { createLLMClient } from "./llm/factory"
 import { getSecret, getSecretStatus, getSettings, setSecret, updateSettings } from "./settings"
@@ -37,6 +51,18 @@ chrome.runtime.onMessage.addListener((msg: RuntimeMessage, _sender, sendResponse
 
     case "provider.test":
       testProvider(msg.provider).then(sendResponse)
+      return true
+
+    case "feedback.append":
+      appendFeedback(msg.entry).then(() => sendResponse({ ok: true }))
+      return true
+
+    case "feedback.list":
+      listFeedback().then(sendResponse)
+      return true
+
+    case "feedback.get":
+      getFeedback(msg.contentHash).then(sendResponse)
       return true
 
     default:
@@ -93,14 +119,26 @@ chrome.runtime.onConnect.addListener((port) => {
       const article = await requestExtraction(msg.tabId)
 
       const contentHash = await hashText(article.text)
+      const wordCount = approxWordCount(article.text)
+      const settings = await getSettings()
+      const provider = settings.provider
+      const model = providerModelName(provider, settings)
+
       const cached = await getCachedAnalysis(contentHash, DEFAULTS.analysisCacheTtlMs)
       if (cached) {
         status("cache-hit")
-        send({ kind: "analysis.complete", result: cached })
+        send({
+          kind: "analysis.complete",
+          result: cached,
+          contentHash,
+          wordCount,
+          provider,
+          model,
+          latencyMs: null,
+        })
         return
       }
 
-      const settings = await getSettings()
       const secrets = {
         anthropicKey: await getSecret("anthropic"),
         deepseekKey: await getSecret("deepseek"),
@@ -108,7 +146,7 @@ chrome.runtime.onConnect.addListener((port) => {
 
       let client: ReturnType<typeof createLLMClient>
       try {
-        client = createLLMClient(settings.provider, settings, secrets)
+        client = createLLMClient(provider, settings, secrets)
       } catch (err) {
         if (err instanceof LLMError && err.kind === "missing_credentials") {
           send({ kind: "analysis.error", reason: "no_api_key" })
@@ -123,13 +161,23 @@ chrome.runtime.onConnect.addListener((port) => {
 
       status("calling-llm")
       status("streaming")
+      const startedAt = Date.now()
       const result = await client.analyze(
         { title: article.title, url: article.url, text: article.text },
         (partial) => send({ kind: "analysis.partial", result: partial }),
       )
+      const latencyMs = Date.now() - startedAt
 
       await setCachedAnalysis(contentHash, result)
-      send({ kind: "analysis.complete", result })
+      send({
+        kind: "analysis.complete",
+        result,
+        contentHash,
+        wordCount,
+        provider,
+        model,
+        latencyMs,
+      })
       status("done")
     } catch (err) {
       const reason = err instanceof LLMError ? `${err.kind}: ${err.message}` : String(err)
@@ -138,6 +186,20 @@ chrome.runtime.onConnect.addListener((port) => {
     }
   })
 })
+
+function providerModelName(
+  provider: Provider,
+  settings: Awaited<ReturnType<typeof getSettings>>,
+): string {
+  switch (provider) {
+    case "anthropic":
+      return ANTHROPIC_MODELS.analysis
+    case "ollama":
+      return settings.ollama.model
+    case "deepseek":
+      return settings.deepseek.model || DEEPSEEK_MODELS.analysis
+  }
+}
 
 async function requestExtraction(tabId: number): Promise<ExtractedArticle> {
   const response = await chrome.tabs.sendMessage<RuntimeMessage, RuntimeMessage>(tabId, {
