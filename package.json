@@ -12,7 +12,8 @@
     "lint": "biome check src tests",
     "format": "biome format --write src tests",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "package": "node scripts/package.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",
