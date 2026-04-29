@@ -4,7 +4,9 @@ import {
   DEFAULTS,
   PORTS,
   type Provider,
+  TELEMETRY_LOG_PREFIX,
 } from "@/shared/constants"
+import { hostnameOf, isSensitiveHost, matchesPattern } from "@/shared/domains"
 import { approxWordCount } from "@/shared/feedback"
 import type {
   AnalysisPhase,
@@ -16,18 +18,23 @@ import type {
 import {
   appendFeedback,
   getCachedAnalysis,
+  getCachedDefinition,
   getFeedback,
   hashText,
   listFeedback,
   setCachedAnalysis,
+  setCachedDefinition,
 } from "./cache/analysis"
+import { appendSession, appendWpmSample, getStatsSummary } from "./cache/stats"
 import { LLMError } from "./llm/client"
 import { createLLMClient } from "./llm/factory"
 import { getSecret, getSecretStatus, getSettings, setSecret, updateSettings } from "./settings"
 
 chrome.runtime.onInstalled.addListener(() => {
+  // With a default_popup set, clicking the action opens the popup instead of
+  // the side panel. The popup has an "Open side panel" button.
   chrome.sidePanel
-    .setPanelBehavior({ openPanelOnActionClick: true })
+    .setPanelBehavior({ openPanelOnActionClick: false })
     .catch((err) => console.error("[Deepread] sidePanel.setPanelBehavior failed", err))
 })
 
@@ -65,10 +72,62 @@ chrome.runtime.onMessage.addListener((msg: RuntimeMessage, _sender, sendResponse
       getFeedback(msg.contentHash).then(sendResponse)
       return true
 
+    case "define.request":
+      handleDefine(msg.word, msg.sentence, msg.lang).then(sendResponse)
+      return true
+
+    case "stats.wpmSample":
+      appendWpmSample({
+        contentHash: msg.contentHash,
+        wpm: msg.wpm,
+        wordCount: msg.wordCount,
+        durationMs: msg.durationMs,
+        ts: msg.ts,
+      }).then(() => sendResponse({ ok: true }))
+      return true
+
+    case "stats.session":
+      appendSession({
+        contentHash: msg.contentHash,
+        regressions: msg.regressions,
+        completed: msg.completed,
+        ts: msg.ts,
+      }).then(() => sendResponse({ ok: true }))
+      return true
+
+    case "stats.summary":
+      getStatsSummary().then(sendResponse)
+      return true
+
+    case "telemetry.log":
+      console.info(TELEMETRY_LOG_PREFIX, msg.event, msg.payload)
+      sendResponse({ ok: true })
+      return true
+
     default:
       return false
   }
 })
+
+async function handleDefine(word: string, sentence: string, lang: string) {
+  const cacheKey = `${lang}::${word.toLowerCase()}`
+  const cached = await getCachedDefinition(cacheKey, DEFAULTS.definitionCacheTtlMs)
+  if (cached) return cached
+  try {
+    const settings = await getSettings()
+    const secrets = {
+      anthropicKey: await getSecret("anthropic"),
+      deepseekKey: await getSecret("deepseek"),
+    }
+    const client = createLLMClient(settings.provider, settings, secrets)
+    const result = await client.define({ word, sentence })
+    await setCachedDefinition(cacheKey, result)
+    return result
+  } catch (err) {
+    console.warn("[Deepread] define failed:", err)
+    return null
+  }
+}
 
 async function testProvider(provider: Provider): Promise<ProviderTestResult> {
   try {
@@ -115,12 +174,21 @@ chrome.runtime.onConnect.addListener((port) => {
     const status = (phase: AnalysisPhase) => send({ kind: "analysis.status", phase })
 
     try {
+      // Pre-flight privacy guard
+      const tab = await chrome.tabs.get(msg.tabId)
+      const url = tab.url ?? ""
+      const settings = await getSettings()
+      const host = hostnameOf(url)
+      if (host && !isAllowedHost(host, url, settings.privacy)) {
+        send({ kind: "analysis.error", reason: "blocked_sensitive_domain" })
+        return
+      }
+
       status("extracting")
       const article = await requestExtraction(msg.tabId)
 
       const contentHash = await hashText(article.text)
       const wordCount = approxWordCount(article.text)
-      const settings = await getSettings()
       const provider = settings.provider
       const model = providerModelName(provider, settings)
 
@@ -186,6 +254,16 @@ chrome.runtime.onConnect.addListener((port) => {
     }
   })
 })
+
+function isAllowedHost(
+  host: string,
+  url: string,
+  privacy: { allowedDomains: string[]; blockedDomains: string[] },
+): boolean {
+  for (const p of privacy.allowedDomains) if (matchesPattern(host, p)) return true
+  for (const p of privacy.blockedDomains) if (matchesPattern(host, p)) return false
+  return !isSensitiveHost(url)
+}
 
 function providerModelName(
   provider: Provider,

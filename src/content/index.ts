@@ -4,6 +4,7 @@ import { closeReader, openReader } from "./reader"
 
 let cachedArticle: ExtractedArticle | null = null
 let cachedFromUrl: string | null = null
+let cachedContentHash: string | null = null
 
 chrome.runtime.onMessage.addListener((msg: RuntimeMessage, _sender, sendResponse) => {
   if (msg.kind === "extract.request") {
@@ -12,7 +13,7 @@ chrome.runtime.onMessage.addListener((msg: RuntimeMessage, _sender, sendResponse
   }
 
   if (msg.kind === "reader.open") {
-    handleReaderOpen(msg.result, sendResponse)
+    handleReaderOpen(msg.result, msg.settings, sendResponse)
     return false
   }
 
@@ -34,6 +35,7 @@ function handleExtract(sendResponse: (m: RuntimeMessage) => void) {
     }
     cachedArticle = article
     cachedFromUrl = location.href
+    cachedContentHash = null // populated when we receive analysis.complete
     sendResponse({ kind: "extract.response", article })
   } catch (err) {
     sendResponse({
@@ -45,6 +47,7 @@ function handleExtract(sendResponse: (m: RuntimeMessage) => void) {
 
 function handleReaderOpen(
   result: Parameters<typeof openReader>[0]["result"],
+  settings: Parameters<typeof openReader>[0]["settings"],
   sendResponse: (m: RuntimeMessage) => void,
 ) {
   if (!cachedArticle || cachedFromUrl !== location.href) {
@@ -55,7 +58,8 @@ function handleReaderOpen(
     return
   }
   try {
-    openReader({ article: cachedArticle, result })
+    const contentHash = cachedContentHash ?? ""
+    openReader({ article: cachedArticle, result, settings, contentHash })
     sendResponse({ kind: "reader.ack", ok: true })
   } catch (err) {
     sendResponse({

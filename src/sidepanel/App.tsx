@@ -1,11 +1,33 @@
-import { useState } from "react"
+import type { AppSettings } from "@/shared/types"
+import { useEffect, useState } from "react"
+import { send } from "./messaging"
 import { Brief } from "./views/Brief"
+import { Onboarding } from "./views/Onboarding"
 import { Settings } from "./views/Settings"
+import { Stats } from "./views/Stats"
 
-type Tab = "brief" | "settings"
+type Tab = "brief" | "stats" | "settings"
 
 export function App() {
   const [tab, setTab] = useState<Tab>("brief")
+  const [settings, setSettings] = useState<AppSettings | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      const next = await send<AppSettings>({ kind: "settings.get" })
+      if (!cancelled) setSettings(next)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  if (!settings) return <div className="p-4 text-sm text-neutral-500">Loading…</div>
+
+  if (!settings.privacy.onboardingComplete) {
+    return <Onboarding onDone={(next) => setSettings(next)} />
+  }
 
   return (
     <div className="flex h-full flex-col">
@@ -20,21 +42,22 @@ export function App() {
           <TabButton active={tab === "brief"} onClick={() => setTab("brief")}>
             Brief
           </TabButton>
+          <TabButton active={tab === "stats"} onClick={() => setTab("stats")}>
+            Stats
+          </TabButton>
           <TabButton active={tab === "settings"} onClick={() => setTab("settings")}>
             Settings
           </TabButton>
         </nav>
       </header>
-      <main className="flex-1 overflow-y-auto">{tab === "brief" ? <Brief /> : <Settings />}</main>
+      <main className="flex-1 overflow-y-auto">
+        {tab === "brief" ? <Brief /> : tab === "stats" ? <Stats /> : <Settings />}
+      </main>
     </div>
   )
 }
 
-function TabButton(props: {
-  active: boolean
-  onClick: () => void
-  children: React.ReactNode
-}) {
+function TabButton(props: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
     <button
       type="button"

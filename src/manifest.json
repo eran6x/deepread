@@ -10,7 +10,8 @@
     "type": "module"
   },
   "action": {
-    "default_title": "Deepread"
+    "default_title": "Deepread",
+    "default_popup": "src/popup/index.html"
   },
   "side_panel": {
     "default_path": "src/sidepanel/index.html"

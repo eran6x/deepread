@@ -11,13 +11,50 @@ export interface DeepSeekConfig {
   model: string
 }
 
+export type HighlightPalette = "default" | "high-contrast" | "mono"
+export type HighlightStyle = "underline" | "fill"
+
+export interface ReaderUISettings {
+  /** Opacity for paragraphs outside the focus band (0.2 - 1). */
+  dimOpacity: number
+  /** Color palette name for highlight overlays. */
+  palette: HighlightPalette
+  /**
+   * How highlights are rendered. "underline" puts a colored bar under the
+   * text (always readable, default). "fill" tints the text background — works
+   * in light mode but can clash with text in dark mode.
+   */
+  highlightStyle: HighlightStyle
+  /** Per-category enable flags. All on by default. */
+  categories: {
+    entity: boolean
+    claim: boolean
+    evidence: boolean
+    number: boolean
+  }
+  /** Whether to dim sections marked tangent/boilerplate. */
+  hideTangents: boolean
+}
+
+export interface PrivacySettings {
+  /** Domains the user has explicitly allowed (overrides sensitive-list). */
+  allowedDomains: string[]
+  /** Domains the user has explicitly added to their personal block-list. */
+  blockedDomains: string[]
+  /** Whether the first-run onboarding has been completed. */
+  onboardingComplete: boolean
+  /** Local telemetry events: structured-log only at v1 (no backend). */
+  telemetryConsent: boolean
+}
+
 export interface AppSettings {
   wpm: number
-  dimOpacity: number
   pacerStyle: "band" | "underline" | "chunk"
   provider: Provider
   ollama: OllamaConfig
   deepseek: DeepSeekConfig
+  reader: ReaderUISettings
+  privacy: PrivacySettings
 }
 
 export interface ExtractedArticle {
@@ -45,10 +82,28 @@ export type RuntimeMessage =
   | { kind: "feedback.append"; entry: FeedbackEntry }
   | { kind: "feedback.list" }
   | { kind: "feedback.get"; contentHash: string }
-  | { kind: "reader.open"; result: AnalysisResult }
+  | { kind: "reader.open"; result: AnalysisResult; settings: AppSettings }
   | { kind: "reader.close" }
   | { kind: "reader.ack"; ok: true }
   | { kind: "reader.error"; reason: string }
+  | { kind: "define.request"; word: string; sentence: string; lang: string }
+  | {
+      kind: "stats.wpmSample"
+      contentHash: string
+      wpm: number
+      wordCount: number
+      durationMs: number
+      ts: number
+    }
+  | {
+      kind: "stats.session"
+      contentHash: string
+      regressions: number
+      completed: boolean
+      ts: number
+    }
+  | { kind: "stats.summary" }
+  | { kind: "telemetry.log"; event: string; payload: Record<string, unknown> }
 
 export type PortMessage =
   | { kind: "analysis.partial"; result: PartialAnalysisResult }

@@ -1,18 +1,25 @@
-import type { ExtractedArticle } from "@/shared/types"
-import { READER_CSS } from "./styles"
+import type { AppSettings, ExtractedArticle } from "@/shared/types"
+import { buildReaderCSS } from "./styles"
 
 export interface MountedReader {
   shadowHost: HTMLElement
   shadowRoot: ShadowRoot
   scrollHost: HTMLElement
   articleRoot: HTMLElement
+  toolbar: HTMLElement
+  pacerToggleBtn: HTMLButtonElement
+  tangentsToggleBtn: HTMLButtonElement
+  closeBtn: HTMLButtonElement
   destroy: () => void
 }
 
 const HOST_TAG = "deepread-reader"
-const PRIOR_BODY_OVERFLOW_KEY = "data-deepread-prior-overflow"
 
-export function mountReader(article: ExtractedArticle, onClose: () => void): MountedReader {
+export function mountReader(
+  article: ExtractedArticle,
+  settings: AppSettings,
+  onClose: () => void,
+): MountedReader {
   const existing = document.querySelector(HOST_TAG)
   if (existing) existing.remove()
 
@@ -21,7 +28,7 @@ export function mountReader(article: ExtractedArticle, onClose: () => void): Mou
   const shadow = host.attachShadow({ mode: "open" })
 
   const style = document.createElement("style")
-  style.textContent = READER_CSS
+  style.textContent = buildReaderCSS(settings.reader)
   shadow.appendChild(style)
 
   const root = document.createElement("div")
@@ -36,12 +43,17 @@ export function mountReader(article: ExtractedArticle, onClose: () => void): Mou
       <span class="brand-tag">Reader</span>
     </div>
     <div class="legend">
-      <span class="legend-item"><span class="legend-swatch hl hl--entity"></span>entity</span>
-      <span class="legend-item"><span class="legend-swatch hl hl--claim"></span>claim</span>
-      <span class="legend-item"><span class="legend-swatch hl hl--evidence"></span>evidence</span>
-      <span class="legend-item"><span class="legend-swatch hl hl--number"></span>number</span>
+      <span class="legend-item"><span class="legend-swatch swatch-entity"></span>entity</span>
+      <span class="legend-item"><span class="legend-swatch swatch-claim"></span>claim</span>
+      <span class="legend-item"><span class="legend-swatch swatch-evidence"></span>evidence</span>
+      <span class="legend-item"><span class="legend-swatch swatch-number"></span>number</span>
     </div>
-    <button class="close-btn" type="button">Close</button>
+    <div class="toolbar-buttons">
+      <span class="pacer-status"></span>
+      <button class="tool-btn pacer-toggle" type="button" title="Toggle pacer (space)">Pacer</button>
+      <button class="tool-btn tangents-toggle" type="button" title="Show tangents and boilerplate">Hide tangents</button>
+      <button class="tool-btn close-btn" type="button" title="Close (Esc)">Close</button>
+    </div>
   `
   root.appendChild(toolbar)
 
@@ -66,21 +78,22 @@ export function mountReader(article: ExtractedArticle, onClose: () => void): Mou
   articleRoot.innerHTML = article.html
   wrap.appendChild(articleRoot)
 
-  // Disable links inside the reader to avoid accidental navigation.
   for (const a of Array.from(articleRoot.querySelectorAll("a"))) {
     a.setAttribute("target", "_blank")
     a.setAttribute("rel", "noopener noreferrer")
   }
 
-  // Prevent host page from scrolling underneath.
   if (!document.body.dataset.deepreadOverflow) {
     document.body.dataset.deepreadOverflow = document.body.style.overflow || ""
     document.body.style.overflow = "hidden"
   }
 
   const closeBtn = toolbar.querySelector("button.close-btn") as HTMLButtonElement
-  const onClick = () => onClose()
-  closeBtn.addEventListener("click", onClick)
+  const pacerToggleBtn = toolbar.querySelector("button.pacer-toggle") as HTMLButtonElement
+  const tangentsToggleBtn = toolbar.querySelector("button.tangents-toggle") as HTMLButtonElement
+
+  const onClickClose = () => onClose()
+  closeBtn.addEventListener("click", onClickClose)
 
   const onKey = (e: KeyboardEvent) => {
     if (e.key === "Escape") onClose()
@@ -88,7 +101,7 @@ export function mountReader(article: ExtractedArticle, onClose: () => void): Mou
   document.addEventListener("keydown", onKey, { capture: true })
 
   function destroy() {
-    closeBtn.removeEventListener("click", onClick)
+    closeBtn.removeEventListener("click", onClickClose)
     document.removeEventListener("keydown", onKey, { capture: true })
     host.remove()
     if (document.body.dataset.deepreadOverflow !== undefined) {
@@ -98,14 +111,15 @@ export function mountReader(article: ExtractedArticle, onClose: () => void): Mou
     }
   }
 
-  // Expose this for cleanup if anything weird happens
-  document.body.setAttribute(PRIOR_BODY_OVERFLOW_KEY, "set")
-
   return {
     shadowHost: host,
     shadowRoot: shadow,
     scrollHost: root,
     articleRoot,
+    toolbar,
+    pacerToggleBtn,
+    tangentsToggleBtn,
+    closeBtn,
     destroy,
   }
 }

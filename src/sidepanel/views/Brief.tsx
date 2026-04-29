@@ -1,7 +1,7 @@
 import type { Provider } from "@/shared/constants"
 import { type FeedbackEntry, buildMetrics } from "@/shared/feedback"
 import type { AnalysisResult } from "@/shared/schema"
-import type { AnalysisPhase, PartialAnalysisResult } from "@/shared/types"
+import type { AnalysisPhase, AppSettings, PartialAnalysisResult } from "@/shared/types"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { type ArticleMeta, downloadMarkdown, formatAsMarkdown, slug } from "../format"
 import { getActiveTab, openAnalysisPort, send } from "../messaging"
@@ -165,9 +165,11 @@ function ActionBar({
   async function openInReader() {
     setReaderErr(null)
     try {
+      const settings = await send<AppSettings>({ kind: "settings.get" })
       const response = await chrome.tabs.sendMessage(meta.tabId, {
         kind: "reader.open",
         result,
+        settings,
       } as const)
       if (response?.kind === "reader.error") setReaderErr(response.reason)
     } catch (err) {

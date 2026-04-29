@@ -9,11 +9,23 @@ import type { ApiKeyStatus, AppSettings } from "@/shared/types"
 
 const DEFAULT_SETTINGS: AppSettings = {
   wpm: DEFAULTS.wpm,
-  dimOpacity: DEFAULTS.dimOpacity,
   pacerStyle: DEFAULTS.pacerStyle,
   provider: DEFAULTS.provider,
   ollama: { ...OLLAMA_DEFAULTS },
   deepseek: { model: DEEPSEEK_MODELS.analysis },
+  reader: {
+    dimOpacity: DEFAULTS.dimOpacity,
+    palette: "default",
+    highlightStyle: "underline",
+    categories: { entity: true, claim: true, evidence: true, number: true },
+    hideTangents: true,
+  },
+  privacy: {
+    allowedDomains: [],
+    blockedDomains: [],
+    onboardingComplete: false,
+    telemetryConsent: false,
+  },
 }
 
 export async function getSettings(): Promise<AppSettings> {
@@ -29,6 +41,15 @@ export async function updateSettings(patch: Partial<AppSettings>): Promise<AppSe
     ...patch,
     ollama: { ...current.ollama, ...(patch.ollama ?? {}) },
     deepseek: { ...current.deepseek, ...(patch.deepseek ?? {}) },
+    reader: {
+      ...current.reader,
+      ...(patch.reader ?? {}),
+      categories: {
+        ...current.reader.categories,
+        ...(patch.reader?.categories ?? {}),
+      },
+    },
+    privacy: { ...current.privacy, ...(patch.privacy ?? {}) },
   }
   await chrome.storage.local.set({ [STORAGE_KEYS.settings]: next })
   return next
@@ -41,6 +62,15 @@ function mergeWithDefaults(stored: Partial<AppSettings> | undefined): AppSetting
     ...stored,
     ollama: { ...DEFAULT_SETTINGS.ollama, ...(stored.ollama ?? {}) },
     deepseek: { ...DEFAULT_SETTINGS.deepseek, ...(stored.deepseek ?? {}) },
+    reader: {
+      ...DEFAULT_SETTINGS.reader,
+      ...(stored.reader ?? {}),
+      categories: {
+        ...DEFAULT_SETTINGS.reader.categories,
+        ...(stored.reader?.categories ?? {}),
+      },
+    },
+    privacy: { ...DEFAULT_SETTINGS.privacy, ...(stored.privacy ?? {}) },
   }
 }
 
