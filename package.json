@@ -13,6 +13,7 @@
     "format": "biome format --write src tests",
     "test": "vitest run",
     "test:watch": "vitest",
+    "icons": "node scripts/icons.mjs",
     "package": "node scripts/package.mjs"
   },
   "dependencies": {
@@ -28,6 +29,7 @@
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
     "@crxjs/vite-plugin": "^2.0.0-beta.28",
+    "@resvg/resvg-js": "^2.6.2",
     "@tailwindcss/vite": "^4.0.0",
     "@types/chrome": "^0.0.287",
     "@types/jsdom": "^28.0.1",

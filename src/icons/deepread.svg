@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Deepread icon — source SVG.
+  After editing, run `pnpm icons` to regenerate the PNGs in public/icons/.
+  Design: indigo rounded square + white glasses (two lenses, bridge, temples).
+-->
+<svg
+  width="128"
+  height="128"
+  viewBox="0 0 128 128"
+  xmlns="http://www.w3.org/2000/svg"
+  role="img"
+  aria-label="Deepread"
+>
+  <!-- Brand-colored tile so the icon reads on both light and dark Chrome chrome -->
+  <rect width="128" height="128" rx="22" fill="#4f46e5" />
+
+  <!-- Glasses: two lenses, short bridge arch, slightly tilted temples -->
+  <g
+    stroke="#ffffff"
+    stroke-width="10"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    fill="none"
+  >
+    <!-- Left lens -->
+    <circle cx="38" cy="70" r="22" />
+    <!-- Right lens -->
+    <circle cx="90" cy="70" r="22" />
+    <!-- Bridge: short upward arch between the two lenses -->
+    <path d="M 60 70 Q 64 62 68 70" />
+    <!-- Left temple: starts at outer edge of left lens, angles up and out -->
+    <line x1="16" y1="70" x2="6" y2="62" />
+    <!-- Right temple: mirror -->
+    <line x1="112" y1="70" x2="122" y2="62" />
+  </g>
+</svg>

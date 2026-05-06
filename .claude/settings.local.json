@@ -17,7 +17,8 @@
       "Bash(pnpm exec *)",
       "Bash(pnpm format *)",
       "Bash(pnpm add *)",
-      "Bash(pnpm package *)"
+      "Bash(pnpm package *)",
+      "Bash(pnpm icons *)"
     ]
   }
 }
