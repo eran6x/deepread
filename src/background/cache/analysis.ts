@@ -125,6 +125,23 @@ export async function setCachedArticle(article: CachedArticle): Promise<void> {
   await db.articles.put(article)
 }
 
+export interface RecentArticle {
+  contentHash: string
+  title: string
+  url: string
+  cachedAt: number
+}
+
+export async function listRecentArticles(limit: number): Promise<RecentArticle[]> {
+  const rows = await db.articles.orderBy("cachedAt").reverse().limit(limit).toArray()
+  return rows.map((r) => ({
+    contentHash: r.contentHash,
+    title: r.title,
+    url: r.url,
+    cachedAt: r.cachedAt,
+  }))
+}
+
 export async function hashText(text: string): Promise<string> {
   const encoded = new TextEncoder().encode(text)
   const buf = await crypto.subtle.digest("SHA-256", encoded)

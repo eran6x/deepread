@@ -1,68 +1,137 @@
+import type { RecentArticle } from "@/background/cache/analysis"
 import type { StatsSummary } from "@/background/cache/stats"
 import { useEffect, useState } from "react"
 import { send } from "../messaging"
 
+const HISTORY_LIMIT = 10
+
 export function Stats() {
   const [summary, setSummary] = useState<StatsSummary | null>(null)
+  const [history, setHistory] = useState<RecentArticle[] | null>(null)
 
   useEffect(() => {
     let cancelled = false
-    void (async () => {
-      const next = await send<StatsSummary>({ kind: "stats.summary" })
-      if (!cancelled) setSummary(next)
-    })()
-    const id = window.setInterval(async () => {
-      const next = await send<StatsSummary>({ kind: "stats.summary" })
-      if (!cancelled) setSummary(next)
-    }, 5000)
+    async function refresh() {
+      const [nextSummary, nextHistory] = await Promise.all([
+        send<StatsSummary>({ kind: "stats.summary" }),
+        send<RecentArticle[]>({ kind: "articles.recent", limit: HISTORY_LIMIT }),
+      ])
+      if (cancelled) return
+      setSummary(nextSummary)
+      setHistory(nextHistory)
+    }
+    void refresh()
+    const id = window.setInterval(refresh, 5000)
     return () => {
       cancelled = true
       window.clearInterval(id)
     }
   }, [])
 
-  if (!summary) {
+  if (!summary || !history) {
     return <div className="p-4 text-sm text-neutral-500">Loading…</div>
   }
 
-  if (summary.totalSamples === 0) {
-    return (
-      <div className="p-4 text-sm text-neutral-600 dark:text-neutral-400">
-        No reading data yet. Open the reader on an article and start scrolling — paragraphs that
-        spend time in the focus band become WPM samples.
-      </div>
-    )
-  }
+  const hasReadingData = summary.totalSamples > 0
 
   return (
     <div className="space-y-5 p-4">
-      <section className="grid grid-cols-3 gap-2">
-        <Stat label="Avg WPM" value={summary.averageWpm} />
-        <Stat label="Median" value={summary.medianWpm} />
-        <Stat label="Best" value={summary.bestWpm} />
-      </section>
+      <HistorySection items={history} />
 
-      <section>
-        <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
-          Last 7 days
-        </h2>
-        <SevenDayChart days={summary.last7DaysWpm} />
-      </section>
+      {hasReadingData ? (
+        <>
+          <section className="grid grid-cols-3 gap-2">
+            <Stat label="Avg WPM" value={summary.averageWpm} />
+            <Stat label="Median" value={summary.medianWpm} />
+            <Stat label="Best" value={summary.bestWpm} />
+          </section>
 
-      <section className="grid grid-cols-3 gap-2 text-xs">
-        <Stat label="Articles" value={summary.totalArticles} sub="opened" />
-        <Stat label="Completed" value={summary.completedArticles} sub=">90% scrolled" />
-        <Stat label="Regressions" value={summary.totalRegressions} sub="back-scrolls" />
-      </section>
+          <section>
+            <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+              Last 7 days
+            </h2>
+            <SevenDayChart days={summary.last7DaysWpm} />
+          </section>
 
-      <section className="text-[11px] leading-relaxed text-neutral-500 dark:text-neutral-400">
-        <p>
-          Samples are recorded locally on your device (no cloud). WPM is computed per paragraph
-          while it sits in the reader's focus band. Capped at 5,000 samples (FIFO).
+          <section className="grid grid-cols-3 gap-2 text-xs">
+            <Stat label="Articles" value={summary.totalArticles} sub="opened" />
+            <Stat label="Completed" value={summary.completedArticles} sub=">90% scrolled" />
+            <Stat label="Regressions" value={summary.totalRegressions} sub="back-scrolls" />
+          </section>
+
+          <section className="text-[11px] leading-relaxed text-neutral-500 dark:text-neutral-400">
+            <p>
+              Samples are recorded locally on your device (no cloud). WPM is computed per paragraph
+              while it sits in the reader's focus band. Capped at 5,000 samples (FIFO).
+            </p>
+          </section>
+        </>
+      ) : (
+        <p className="text-sm text-neutral-600 dark:text-neutral-400">
+          No reading data yet. Open the reader on an article and start scrolling — paragraphs that
+          spend time in the focus band become WPM samples.
         </p>
-      </section>
+      )}
     </div>
   )
+}
+
+function HistorySection({ items }: { items: RecentArticle[] }) {
+  return (
+    <section>
+      <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+        Recent analyses
+      </h2>
+      {items.length === 0 ? (
+        <p className="text-xs text-neutral-500 dark:text-neutral-400">
+          Nothing analyzed yet. Run an analysis on the Brief tab.
+        </p>
+      ) : (
+        <ol className="space-y-1.5">
+          {items.map((item) => (
+            <li
+              key={item.contentHash}
+              className="rounded-md border border-neutral-200 p-2 dark:border-neutral-800"
+            >
+              <a
+                href={item.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block text-sm font-medium text-neutral-900 hover:underline dark:text-neutral-100"
+                title={item.url}
+              >
+                {item.title || hostnameOrUrl(item.url)}
+              </a>
+              <div className="mt-0.5 flex items-center justify-between gap-2 text-[11px] text-neutral-500 dark:text-neutral-400">
+                <span className="truncate">{hostnameOrUrl(item.url)}</span>
+                <span className="shrink-0 tabular-nums">{formatRelative(item.cachedAt)}</span>
+              </div>
+            </li>
+          ))}
+        </ol>
+      )}
+    </section>
+  )
+}
+
+function hostnameOrUrl(url: string): string {
+  try {
+    return new URL(url).hostname
+  } catch {
+    return url
+  }
+}
+
+function formatRelative(ts: number): string {
+  const diffMs = Date.now() - ts
+  const min = Math.floor(diffMs / 60_000)
+  if (min < 1) return "just now"
+  if (min < 60) return `${min}m ago`
+  const hr = Math.floor(min / 60)
+  if (hr < 24) return `${hr}h ago`
+  const day = Math.floor(hr / 24)
+  if (day < 7) return `${day}d ago`
+  return new Date(ts).toISOString().slice(0, 10)
 }
 
 function Stat({ label, value, sub }: { label: string; value: number; sub?: string }) {

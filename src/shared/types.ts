@@ -111,6 +111,7 @@ export type RuntimeMessage =
       ts: number
     }
   | { kind: "stats.summary" }
+  | { kind: "articles.recent"; limit: number }
   | { kind: "telemetry.log"; event: string; payload: Record<string, unknown> }
 
 export interface ConversationTurn {

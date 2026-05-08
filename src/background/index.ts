@@ -23,6 +23,7 @@ import {
   getFeedback,
   hashText,
   listFeedback,
+  listRecentArticles,
   setCachedAnalysis,
   setCachedArticle,
   setCachedDefinition,
@@ -99,6 +100,10 @@ chrome.runtime.onMessage.addListener((msg: RuntimeMessage, _sender, sendResponse
 
     case "stats.summary":
       getStatsSummary().then(sendResponse)
+      return true
+
+    case "articles.recent":
+      listRecentArticles(msg.limit).then(sendResponse)
       return true
 
     case "telemetry.log":
