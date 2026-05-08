@@ -1,44 +1,25 @@
-import type { Provider } from "@/shared/constants"
 import { type FeedbackEntry, buildMetrics } from "@/shared/feedback"
 import type { AnalysisResult } from "@/shared/schema"
 import type { AnalysisPhase, AppSettings, PartialAnalysisResult } from "@/shared/types"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { type ArticleMeta, downloadMarkdown, formatAsMarkdown, slug } from "../format"
 import { getActiveTab, openAnalysisPort, send } from "../messaging"
+import { type AnalysisMeta, useSidepanelStore } from "../store"
 import { AskSection } from "./AskSection"
 
-interface AnalysisMeta {
-  contentHash: string
-  wordCount: number
-  provider: Provider
-  model: string
-  latencyMs: number | null
-  tabId: number
-}
-
-type State =
-  | { kind: "idle" }
-  | {
-      kind: "running"
-      phase: AnalysisPhase
-      partial: PartialAnalysisResult
-      article: ArticleMeta
-    }
-  | {
-      kind: "done"
-      result: AnalysisResult
-      article: ArticleMeta
-      meta: AnalysisMeta
-    }
-  | { kind: "error"; reason: string }
-
 export function Brief() {
-  const [state, setState] = useState<State>({ kind: "idle" })
+  const state = useSidepanelStore((s) => s.state)
+  const setState = useSidepanelStore((s) => s.setState)
+  const resetIfRunning = useSidepanelStore((s) => s.resetIfRunning)
+  const clear = useSidepanelStore((s) => s.clear)
   const portRef = useRef<ReturnType<typeof openAnalysisPort> | null>(null)
 
   useEffect(() => {
-    return () => portRef.current?.close()
-  }, [])
+    return () => {
+      portRef.current?.close()
+      resetIfRunning()
+    }
+  }, [resetIfRunning])
 
   async function startAnalysis() {
     const tab = await getActiveTab()
@@ -122,7 +103,12 @@ export function Brief() {
       <div className="flex items-center justify-between gap-2">
         <PhaseLine phase={phase} />
         {state.kind === "done" ? (
-          <ActionBar result={state.result} article={state.article} meta={state.meta} />
+          <ActionBar
+            result={state.result}
+            article={state.article}
+            meta={state.meta}
+            onClear={clear}
+          />
         ) : null}
       </div>
       <VerdictCard partial={partial} />
@@ -158,10 +144,12 @@ function ActionBar({
   result,
   article,
   meta,
+  onClear,
 }: {
   result: AnalysisResult
   article: ArticleMeta
   meta: AnalysisMeta
+  onClear: () => void
 }) {
   const [copied, setCopied] = useState(false)
   const [readerErr, setReaderErr] = useState<string | null>(null)
@@ -207,6 +195,7 @@ function ActionBar({
         <ActionButton onClick={openInReader}>Open reader</ActionButton>
         <ActionButton onClick={copy}>{copied ? "Copied" : "Copy"}</ActionButton>
         <ActionButton onClick={save}>Save .md</ActionButton>
+        <ActionButton onClick={onClear}>New</ActionButton>
       </div>
       {readerErr ? (
         <p className="max-w-xs text-right text-[11px] text-red-700 dark:text-red-400">

@@ -1,17 +1,10 @@
-import type { Provider } from "@/shared/constants"
 import type { ConversationTurn } from "@/shared/types"
 import { useEffect, useRef, useState } from "react"
 import type { ArticleMeta } from "../format"
 import { openAskPort } from "../messaging"
+import { type AnalysisMeta, useSidepanelStore } from "../store"
 
-interface AnalysisMeta {
-  contentHash: string
-  wordCount: number
-  provider: Provider
-  model: string
-  latencyMs: number | null
-  tabId: number
-}
+const EMPTY_CONVERSATION: ConversationTurn[] = []
 
 export function AskSection({
   article: _article,
@@ -23,7 +16,10 @@ export function AskSection({
   suggestions: string[]
 }) {
   const [collapsed, setCollapsed] = useState(false)
-  const [conversation, setConversation] = useState<ConversationTurn[]>([])
+  const conversation = useSidepanelStore(
+    (s) => s.conversations[meta.contentHash] ?? EMPTY_CONVERSATION,
+  )
+  const setStoreConversation = useSidepanelStore((s) => s.setConversation)
   const [pending, setPending] = useState<ConversationTurn | null>(null)
   const [draft, setDraft] = useState("")
   const portRef = useRef<ReturnType<typeof openAskPort> | null>(null)
@@ -69,12 +65,20 @@ export function AskSection({
       if (msg.kind === "ask.partial") {
         setPending((p) => (p ? { ...p, answer: msg.text } : p))
       } else if (msg.kind === "ask.complete") {
-        setConversation((c) => [...c, { ...turn, answer: msg.text, state: "done" }])
+        const current = useSidepanelStore.getState().conversations[meta.contentHash] ?? []
+        setStoreConversation(meta.contentHash, [
+          ...current,
+          { ...turn, answer: msg.text, state: "done" },
+        ])
         setPending(null)
         port.close()
         if (portRef.current === port) portRef.current = null
       } else if (msg.kind === "ask.error") {
-        setConversation((c) => [...c, { ...turn, state: "error", errorReason: msg.reason }])
+        const current = useSidepanelStore.getState().conversations[meta.contentHash] ?? []
+        setStoreConversation(meta.contentHash, [
+          ...current,
+          { ...turn, state: "error", errorReason: msg.reason },
+        ])
         setPending(null)
         port.close()
         if (portRef.current === port) portRef.current = null
@@ -85,7 +89,11 @@ export function AskSection({
   }
 
   function retry(failed: ConversationTurn) {
-    setConversation((c) => c.filter((t) => t.id !== failed.id))
+    const current = useSidepanelStore.getState().conversations[meta.contentHash] ?? []
+    setStoreConversation(
+      meta.contentHash,
+      current.filter((t) => t.id !== failed.id),
+    )
     submit(failed.question)
   }
 
