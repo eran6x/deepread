@@ -1,5 +1,6 @@
 import type { ExtractedArticle, RuntimeMessage } from "@/shared/types"
 import { Readability, isProbablyReaderable } from "@mozilla/readability"
+import { detectPaywall } from "./paywall"
 import { closeReader, openReader } from "./reader"
 
 let cachedArticle: ExtractedArticle | null = null
@@ -82,6 +83,8 @@ function extractArticle(): ExtractedArticle | null {
   const text = (parsed.textContent ?? "").trim()
   if (text.length < 500) return null
 
+  const paywall = detectPaywall(document, text, location.hostname)
+
   return {
     title: parsed.title ?? document.title,
     byline: parsed.byline ?? null,
@@ -91,5 +94,7 @@ function extractArticle(): ExtractedArticle | null {
     excerpt: parsed.excerpt ?? null,
     siteName: parsed.siteName ?? null,
     url: location.href,
+    paywallSuspected: paywall.suspected,
+    paywallReason: paywall.reason,
   }
 }

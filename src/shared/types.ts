@@ -66,6 +66,8 @@ export interface ExtractedArticle {
   excerpt: string | null
   siteName: string | null
   url: string
+  paywallSuspected: boolean
+  paywallReason: string | null
 }
 
 export type RuntimeMessage =
@@ -146,6 +148,7 @@ export type PortMessage =
     }
   | { kind: "analysis.error"; reason: string }
   | { kind: "analysis.status"; phase: AnalysisPhase }
+  | { kind: "analysis.paywall"; suspected: boolean; reason: string | null }
 
 export type AnalysisPhase =
   | "idle"

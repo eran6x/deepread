@@ -13,6 +13,18 @@ export interface AnalysisMeta {
   tabId: number
 }
 
+export interface PaywallNotice {
+  suspected: boolean
+  reason: string | null
+  dismissed: boolean
+}
+
+export const NO_PAYWALL: PaywallNotice = {
+  suspected: false,
+  reason: null,
+  dismissed: false,
+}
+
 export type BriefState =
   | { kind: "idle" }
   | {
@@ -20,12 +32,14 @@ export type BriefState =
       phase: AnalysisPhase
       partial: PartialAnalysisResult
       article: ArticleMeta
+      paywall: PaywallNotice
     }
   | {
       kind: "done"
       result: AnalysisResult
       article: ArticleMeta
       meta: AnalysisMeta
+      paywall: PaywallNotice
     }
   | { kind: "error"; reason: string }
 

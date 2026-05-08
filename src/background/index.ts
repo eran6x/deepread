@@ -194,6 +194,12 @@ chrome.runtime.onConnect.addListener((port) => {
       status("extracting")
       const article = await requestExtraction(msg.tabId)
 
+      send({
+        kind: "analysis.paywall",
+        suspected: article.paywallSuspected,
+        reason: article.paywallReason,
+      })
+
       const contentHash = await hashText(article.text)
       await setCachedArticle({
         contentHash,

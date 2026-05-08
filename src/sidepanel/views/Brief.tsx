@@ -4,7 +4,7 @@ import type { AnalysisPhase, AppSettings, PartialAnalysisResult } from "@/shared
 import { useEffect, useMemo, useRef, useState } from "react"
 import { type ArticleMeta, downloadMarkdown, formatAsMarkdown, slug } from "../format"
 import { getActiveTab, openAnalysisPort, send } from "../messaging"
-import { type AnalysisMeta, useSidepanelStore } from "../store"
+import { type AnalysisMeta, NO_PAYWALL, type PaywallNotice, useSidepanelStore } from "../store"
 import { AskSection } from "./AskSection"
 
 export function Brief() {
@@ -32,13 +32,28 @@ export function Brief() {
       url: tab.url ?? "",
     }
 
-    setState({ kind: "running", phase: "extracting", partial: {}, article })
+    setState({
+      kind: "running",
+      phase: "extracting",
+      partial: {},
+      article,
+      paywall: NO_PAYWALL,
+    })
 
     const port = openAnalysisPort((msg) => {
       if (msg.kind === "analysis.status") {
         setState((prev) => (prev.kind === "running" ? { ...prev, phase: msg.phase } : prev))
       } else if (msg.kind === "analysis.partial") {
         setState((prev) => (prev.kind === "running" ? { ...prev, partial: msg.result } : prev))
+      } else if (msg.kind === "analysis.paywall") {
+        setState((prev) =>
+          prev.kind === "running"
+            ? {
+                ...prev,
+                paywall: { suspected: msg.suspected, reason: msg.reason, dismissed: false },
+              }
+            : prev,
+        )
       } else if (msg.kind === "analysis.complete") {
         const meta: AnalysisMeta = {
           contentHash: msg.contentHash,
@@ -50,8 +65,14 @@ export function Brief() {
         }
         setState((prev) =>
           prev.kind === "running"
-            ? { kind: "done", result: msg.result, article: prev.article, meta }
-            : { kind: "done", result: msg.result, article, meta },
+            ? {
+                kind: "done",
+                result: msg.result,
+                article: prev.article,
+                meta,
+                paywall: prev.paywall,
+              }
+            : { kind: "done", result: msg.result, article, meta, paywall: NO_PAYWALL },
         )
       } else if (msg.kind === "analysis.error") {
         setState({ kind: "error", reason: msg.reason })
@@ -111,6 +132,20 @@ export function Brief() {
           />
         ) : null}
       </div>
+      {(state.kind === "running" || state.kind === "done") &&
+      state.paywall.suspected &&
+      !state.paywall.dismissed ? (
+        <PaywallBanner
+          paywall={state.paywall}
+          onDismiss={() =>
+            setState((prev) =>
+              prev.kind === "running" || prev.kind === "done"
+                ? { ...prev, paywall: { ...prev.paywall, dismissed: true } }
+                : prev,
+            )
+          }
+        />
+      ) : null}
       <VerdictCard partial={partial} />
       <BriefCard partial={partial} />
       <TopicsRow partial={partial} />
@@ -125,6 +160,34 @@ export function Brief() {
           />
         </>
       ) : null}
+    </div>
+  )
+}
+
+function PaywallBanner({
+  paywall,
+  onDismiss,
+}: {
+  paywall: PaywallNotice
+  onDismiss: () => void
+}) {
+  return (
+    <div className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
+      <div className="flex-1">
+        <p className="font-medium">Article may be paywalled</p>
+        <p className="mt-0.5 text-xs">
+          {paywall.reason ? `Detected: ${paywall.reason}.` : "We couldn't extract the full text."}{" "}
+          Analysis is still running, but it may be incomplete.
+        </p>
+      </div>
+      <button
+        type="button"
+        onClick={onDismiss}
+        aria-label="Dismiss paywall warning"
+        className="-m-1 rounded p-1 text-amber-700 hover:bg-amber-100 dark:text-amber-300 dark:hover:bg-amber-900"
+      >
+        ×
+      </button>
     </div>
   )
 }
