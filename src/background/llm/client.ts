@@ -1,5 +1,7 @@
 import type { AnalysisResult, DefinitionResult, PartialAnalysisResult } from "@/shared/schema"
-import type { ProviderTestResult } from "@/shared/types"
+import type { AskInput, ProviderTestResult } from "@/shared/types"
+
+export type { AskInput }
 
 export interface AnalyzeInput {
   title: string
@@ -18,6 +20,7 @@ export interface LLMClient {
   analyze(input: AnalyzeInput, onPartial: PartialHandler): Promise<AnalysisResult>
   define(input: DefineInput): Promise<DefinitionResult>
   test(): Promise<ProviderTestResult>
+  ask(input: AskInput, onPartial: (accumulatedText: string) => void): Promise<string>
 }
 
 export type LLMErrorKind =

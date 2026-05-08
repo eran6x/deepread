@@ -4,6 +4,7 @@ import type { ProviderTestResult } from "@/shared/types"
 import { Allow, parse as parsePartialJson } from "partial-json"
 import {
   type AnalyzeInput,
+  type AskInput,
   type DefineInput,
   type LLMClient,
   LLMError,
@@ -18,8 +19,10 @@ import {
   DEFINE_TOOL,
   DEFINE_TOOL_OPENAI,
   buildAnalysisUserMessage,
+  buildAskSystemPrompt,
   buildDefineUserMessage,
 } from "./prompts"
+import { readSseEvents } from "./sse-reader"
 
 interface OpenAITool {
   type: "function"
@@ -121,6 +124,50 @@ export class OpenAICompatibleClient implements LLMClient {
     }
   }
 
+  async ask(input: AskInput, onPartial: (text: string) => void): Promise<string> {
+    const body = {
+      model: this.config.model,
+      messages: [
+        { role: "system", content: buildAskSystemPrompt(input.article) },
+        ...input.history,
+        { role: "user", content: input.question },
+      ],
+      stream: true,
+      max_tokens: 1024,
+    }
+
+    let response: Response
+    try {
+      response = await fetch(`${this.config.baseURL}/chat/completions`, {
+        method: "POST",
+        headers: this.headers(),
+        body: JSON.stringify(body),
+      })
+    } catch (err) {
+      throw classifyFetchError(err, this.config.label)
+    }
+    if (!response.ok) {
+      throw classifyHttpError(response.status, await safeReadText(response), this.config.label)
+    }
+
+    let accumulated = ""
+    await readSseEvents(response, (data) => {
+      let parsed: unknown
+      try {
+        parsed = JSON.parse(data)
+      } catch {
+        return
+      }
+      const delta = (parsed as { choices?: Array<{ delta?: { content?: string } }> }).choices?.[0]
+        ?.delta?.content
+      if (typeof delta === "string" && delta.length > 0) {
+        accumulated += delta
+        onPartial(accumulated)
+      }
+    })
+    return accumulated
+  }
+
   private async streamToolCallArgs(args: {
     systemPrompt: string
     userContent: string
@@ -155,50 +202,28 @@ export class OpenAICompatibleClient implements LLMClient {
     if (!response.ok) {
       throw classifyHttpError(response.status, await safeReadText(response), this.config.label)
     }
-    if (!response.body) {
-      throw new LLMError(`${this.config.label}: empty response body`, undefined, "network")
-    }
 
     let argsAccum = ""
     let toolCallSeen = false
-    const reader = response.body.getReader()
-    const decoder = new TextDecoder()
-    let buffer = ""
-
-    while (true) {
-      const { value, done } = await reader.read()
-      if (done) break
-      buffer += decoder.decode(value, { stream: true })
-
-      while (true) {
-        const sep = buffer.indexOf("\n\n")
-        if (sep === -1) break
-        const event = buffer.slice(0, sep)
-        buffer = buffer.slice(sep + 2)
-        const dataLine = event.split("\n").find((l) => l.startsWith("data:"))
-        if (!dataLine) continue
-        const data = dataLine.slice(5).trim()
-        if (!data || data === "[DONE]") continue
-
-        let parsed: unknown
-        try {
-          parsed = JSON.parse(data)
-        } catch {
-          continue
-        }
-        const choices = (parsed as { choices?: Array<{ delta?: unknown }> }).choices
-        const delta = choices?.[0]?.delta as
-          | { tool_calls?: Array<{ function?: { arguments?: string } }> }
-          | undefined
-        const toolCall = delta?.tool_calls?.[0]
-        const argsDelta = toolCall?.function?.arguments
-        if (typeof argsDelta === "string" && argsDelta.length > 0) {
-          toolCallSeen = true
-          argsAccum += argsDelta
-          args.onPartialArgs(argsAccum)
-        }
+    await readSseEvents(response, (data) => {
+      let parsed: unknown
+      try {
+        parsed = JSON.parse(data)
+      } catch {
+        return
       }
-    }
+      const choices = (parsed as { choices?: Array<{ delta?: unknown }> }).choices
+      const delta = choices?.[0]?.delta as
+        | { tool_calls?: Array<{ function?: { arguments?: string } }> }
+        | undefined
+      const toolCall = delta?.tool_calls?.[0]
+      const argsDelta = toolCall?.function?.arguments
+      if (typeof argsDelta === "string" && argsDelta.length > 0) {
+        toolCallSeen = true
+        argsAccum += argsDelta
+        args.onPartialArgs(argsAccum)
+      }
+    })
 
     if (!toolCallSeen) {
       throw new LLMError(

@@ -14,10 +14,19 @@ interface CachedDefinition {
   cachedAt: number
 }
 
+interface CachedArticle {
+  contentHash: string
+  title: string
+  url: string
+  text: string
+  cachedAt: number
+}
+
 class DeepreadDB extends Dexie {
   analyses!: EntityTable<CachedAnalysis, "contentHash">
   definitions!: EntityTable<CachedDefinition, "word">
   feedback!: EntityTable<FeedbackEntry, "contentHash">
+  articles!: EntityTable<CachedArticle, "contentHash">
 
   constructor() {
     super("Deepread")
@@ -29,6 +38,12 @@ class DeepreadDB extends Dexie {
       analyses: "&contentHash, cachedAt",
       definitions: "&word, cachedAt",
       feedback: "&contentHash, ts, rating, provider",
+    })
+    this.version(3).stores({
+      analyses: "&contentHash, cachedAt",
+      definitions: "&word, cachedAt",
+      feedback: "&contentHash, ts, rating, provider",
+      articles: "&contentHash, cachedAt",
     })
   }
 }
@@ -91,6 +106,23 @@ export async function getCachedDefinition(
 
 export async function setCachedDefinition(word: string, result: DefinitionResult): Promise<void> {
   await db.definitions.put({ word, result, cachedAt: Date.now() })
+}
+
+export async function getCachedArticle(
+  contentHash: string,
+  ttlMs: number,
+): Promise<CachedArticle | null> {
+  const row = await db.articles.get(contentHash)
+  if (!row) return null
+  if (Date.now() - row.cachedAt > ttlMs) {
+    await db.articles.delete(contentHash)
+    return null
+  }
+  return row
+}
+
+export async function setCachedArticle(article: CachedArticle): Promise<void> {
+  await db.articles.put(article)
 }
 
 export async function hashText(text: string): Promise<string> {

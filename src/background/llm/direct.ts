@@ -5,6 +5,7 @@ import type { ProviderTestResult } from "@/shared/types"
 import Anthropic from "@anthropic-ai/sdk"
 import {
   type AnalyzeInput,
+  type AskInput,
   type DefineInput,
   type LLMClient,
   LLMError,
@@ -17,6 +18,7 @@ import {
   DEFINE_SYSTEM_PROMPT,
   DEFINE_TOOL,
   buildAnalysisUserMessage,
+  buildAskSystemPrompt,
   buildDefineUserMessage,
 } from "./prompts"
 
@@ -114,6 +116,33 @@ export class DirectAnthropicClient implements LLMClient {
       )
     }
     return validated.data
+  }
+
+  async ask(input: AskInput, onPartial: (text: string) => void): Promise<string> {
+    let stream: ReturnType<Anthropic["messages"]["stream"]>
+    try {
+      stream = this.client.messages.stream({
+        model: ANTHROPIC_MODELS.analysis,
+        max_tokens: 1024,
+        system: buildAskSystemPrompt(input.article),
+        messages: [...input.history, { role: "user", content: input.question }],
+      })
+    } catch (err) {
+      throw classifyError(err)
+    }
+
+    let accumulated = ""
+    stream.on("text", (delta: string) => {
+      accumulated += delta
+      onPartial(accumulated)
+    })
+
+    try {
+      await stream.finalMessage()
+    } catch (err) {
+      throw classifyError(err)
+    }
+    return accumulated
   }
 
   async test(): Promise<ProviderTestResult> {

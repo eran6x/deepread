@@ -18,11 +18,13 @@ import type {
 import {
   appendFeedback,
   getCachedAnalysis,
+  getCachedArticle,
   getCachedDefinition,
   getFeedback,
   hashText,
   listFeedback,
   setCachedAnalysis,
+  setCachedArticle,
   setCachedDefinition,
 } from "./cache/analysis"
 import { appendSession, appendWpmSample, getStatsSummary } from "./cache/stats"
@@ -188,6 +190,13 @@ chrome.runtime.onConnect.addListener((port) => {
       const article = await requestExtraction(msg.tabId)
 
       const contentHash = await hashText(article.text)
+      await setCachedArticle({
+        contentHash,
+        title: article.title,
+        url: article.url,
+        text: article.text,
+        cachedAt: Date.now(),
+      })
       const wordCount = approxWordCount(article.text)
       const provider = settings.provider
       const model = providerModelName(provider, settings)
@@ -278,6 +287,59 @@ function providerModelName(
       return settings.deepseek.model || DEEPSEEK_MODELS.analysis
   }
 }
+
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name !== PORTS.ask) return
+  let cancelled = false
+  port.onDisconnect.addListener(() => {
+    cancelled = true
+  })
+
+  port.onMessage.addListener(async (msg: RuntimeMessage) => {
+    if (msg.kind === "ask.cancel") {
+      cancelled = true
+      return
+    }
+    if (msg.kind !== "ask.start") return
+    const turnId = msg.turnId
+
+    const post = (m: { kind: string; turnId: string; text?: string; reason?: string }) => {
+      if (cancelled) return
+      try {
+        port.postMessage(m)
+      } catch {
+        cancelled = true
+      }
+    }
+
+    try {
+      const article = await getCachedArticle(msg.contentHash, DEFAULTS.analysisCacheTtlMs)
+      if (!article) {
+        post({ kind: "ask.error", turnId, reason: "no_cached_article" })
+        return
+      }
+      const settings = await getSettings()
+      const secrets = {
+        anthropicKey: await getSecret("anthropic"),
+        deepseekKey: await getSecret("deepseek"),
+      }
+      const client = createLLMClient(settings.provider, settings, secrets)
+
+      const answer = await client.ask(
+        {
+          article: { title: article.title, url: article.url, text: article.text },
+          history: msg.history,
+          question: msg.question,
+        },
+        (text) => post({ kind: "ask.partial", turnId, text }),
+      )
+      post({ kind: "ask.complete", turnId, text: answer })
+    } catch (err) {
+      const reason = err instanceof LLMError ? `${err.kind}: ${err.message}` : String(err)
+      post({ kind: "ask.error", turnId, reason })
+    }
+  })
+})
 
 async function requestExtraction(tabId: number): Promise<ExtractedArticle> {
   const response = await chrome.tabs.sendMessage<RuntimeMessage, RuntimeMessage>(tabId, {

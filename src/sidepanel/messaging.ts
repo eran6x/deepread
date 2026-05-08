@@ -1,5 +1,5 @@
 import { PORTS } from "@/shared/constants"
-import type { PortMessage, RuntimeMessage } from "@/shared/types"
+import type { AskPortMessage, PortMessage, RuntimeMessage } from "@/shared/types"
 
 export type AnalysisListener = (msg: PortMessage) => void
 
@@ -17,6 +17,29 @@ export function openAnalysisPort(onMessage: AnalysisListener): {
     },
     cancel: () => {
       port.postMessage({ kind: "analyze.cancel" } satisfies RuntimeMessage)
+    },
+    close: () => port.disconnect(),
+  }
+}
+
+export function openAskPort(onMessage: (msg: AskPortMessage) => void): {
+  start: (args: {
+    contentHash: string
+    turnId: string
+    question: string
+    history: Array<{ role: "user" | "assistant"; content: string }>
+  }) => void
+  cancel: () => void
+  close: () => void
+} {
+  const port = chrome.runtime.connect({ name: PORTS.ask })
+  port.onMessage.addListener(onMessage as (msg: unknown) => void)
+  return {
+    start: (args) => {
+      port.postMessage({ kind: "ask.start", ...args } satisfies RuntimeMessage)
+    },
+    cancel: () => {
+      port.postMessage({ kind: "ask.cancel" } satisfies RuntimeMessage)
     },
     close: () => port.disconnect(),
   }

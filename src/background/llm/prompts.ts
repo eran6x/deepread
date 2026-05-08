@@ -190,3 +190,28 @@ export function buildDefineUserMessage(word: string, sentence: string): string {
   return `word: "${word}"
 sentence: "${sentence}"`
 }
+
+export const ASK_SYSTEM_PROMPT_TEMPLATE = `You are a Q&A assistant for one specific article. Your only knowledge of this article is the text provided below. You have no other context, no internet access, and no general-knowledge mode.
+
+Rules:
+- Only answer questions that can be addressed using the article text.
+- If the article does not contain the information needed, say so explicitly. Do not speculate. Do not fill from outside knowledge.
+- If the question is not about this article (general knowledge, unrelated topics, requests to write code, tell jokes, etc.), refuse with one sentence: "I can only answer questions about this article." Then suggest 2-3 questions the article could actually answer.
+- Cite the article by quoting short phrases (under 15 words) or paraphrasing specific claims. Keep answers concise — 2 to 4 sentences unless explicitly asked for more.
+- Do not editorialize or add commentary not in the article.
+
+Article title: {{title}}
+Article URL: {{url}}
+
+---ARTICLE TEXT---
+{{text}}`
+
+export function buildAskSystemPrompt(article: {
+  title: string
+  url: string
+  text: string
+}): string {
+  return ASK_SYSTEM_PROMPT_TEMPLATE.replace("{{title}}", article.title)
+    .replace("{{url}}", article.url)
+    .replace("{{text}}", article.text)
+}

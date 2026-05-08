@@ -60,6 +60,7 @@ export const PALETTES = {
 
 export const PORTS = {
   analysis: "deepread.analysis",
+  ask: "deepread.ask",
 } as const
 
 export const STORAGE_KEYS = {

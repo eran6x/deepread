@@ -74,6 +74,14 @@ export type RuntimeMessage =
   | { kind: "extract.error"; reason: string }
   | { kind: "analyze.start"; tabId: number }
   | { kind: "analyze.cancel" }
+  | {
+      kind: "ask.start"
+      contentHash: string
+      turnId: string
+      question: string
+      history: Array<{ role: "user" | "assistant"; content: string }>
+    }
+  | { kind: "ask.cancel" }
   | { kind: "settings.get" }
   | { kind: "settings.update"; patch: Partial<AppSettings> }
   | { kind: "secrets.set"; provider: "anthropic" | "deepseek"; key: string }
@@ -104,6 +112,25 @@ export type RuntimeMessage =
     }
   | { kind: "stats.summary" }
   | { kind: "telemetry.log"; event: string; payload: Record<string, unknown> }
+
+export interface ConversationTurn {
+  id: string
+  question: string
+  answer: string
+  state: "streaming" | "done" | "error"
+  errorReason?: string
+}
+
+export interface AskInput {
+  article: { title: string; url: string; text: string }
+  history: Array<{ role: "user" | "assistant"; content: string }>
+  question: string
+}
+
+export type AskPortMessage =
+  | { kind: "ask.partial"; turnId: string; text: string }
+  | { kind: "ask.complete"; turnId: string; text: string }
+  | { kind: "ask.error"; turnId: string; reason: string }
 
 export type PortMessage =
   | { kind: "analysis.partial"; result: PartialAnalysisResult }

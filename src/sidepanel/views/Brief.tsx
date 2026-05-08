@@ -5,6 +5,7 @@ import type { AnalysisPhase, AppSettings, PartialAnalysisResult } from "@/shared
 import { useEffect, useMemo, useRef, useState } from "react"
 import { type ArticleMeta, downloadMarkdown, formatAsMarkdown, slug } from "../format"
 import { getActiveTab, openAnalysisPort, send } from "../messaging"
+import { AskSection } from "./AskSection"
 
 interface AnalysisMeta {
   contentHash: string
@@ -128,10 +129,29 @@ export function Brief() {
       <BriefCard partial={partial} />
       <TopicsRow partial={partial} />
       {state.kind === "done" ? (
-        <FeedbackBar result={state.result} article={state.article} meta={state.meta} />
+        <>
+          <FeedbackBar result={state.result} article={state.article} meta={state.meta} />
+          <AskSection
+            key={state.meta.contentHash}
+            article={state.article}
+            meta={state.meta}
+            suggestions={suggestionsFromResult(state.result)}
+          />
+        </>
       ) : null}
     </div>
   )
+}
+
+function suggestionsFromResult(result: AnalysisResult): string[] {
+  const topic = result.topics[0]
+  return [
+    "What is the main argument of this article?",
+    topic
+      ? `What evidence supports the claim about ${topic}?`
+      : "What evidence does the author provide?",
+    "What does the author conclude?",
+  ]
 }
 
 function ActionBar({
