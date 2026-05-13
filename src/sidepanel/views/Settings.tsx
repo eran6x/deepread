@@ -559,7 +559,10 @@ function humanizeTestFailure(
     case "schema":
       return "Response did not match the expected analysis shape. The model may not be capable enough."
     case "permission_denied":
-      return "Browser permission denied for this endpoint."
+      return (
+        detail ??
+        "Browser permission denied for this endpoint. For Ollama, set OLLAMA_ORIGINS=chrome-extension://* and restart it."
+      )
     default:
       return detail ?? "Test failed."
   }

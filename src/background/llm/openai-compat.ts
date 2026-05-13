@@ -267,6 +267,13 @@ async function safeReadText(response: Response): Promise<string> {
 }
 
 function classifyHttpError(status: number, body: string, label: string): LLMError {
+  if (status === 403 && label === "Ollama") {
+    return new LLMError(
+      `${label}: origin not allowed by Ollama (HTTP 403). Set OLLAMA_ORIGINS=chrome-extension://* before starting Ollama, or restart with that env var.`,
+      body,
+      "permission_denied",
+    )
+  }
   if (status === 401 || status === 403) {
     return new LLMError(`${label}: authentication failed (HTTP ${status})`, body, "auth")
   }
