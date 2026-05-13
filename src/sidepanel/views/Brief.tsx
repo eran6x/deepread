@@ -1,3 +1,4 @@
+import { PROVIDER_LABELS } from "@/shared/constants"
 import { type FeedbackEntry, buildMetrics } from "@/shared/feedback"
 import type { AnalysisResult } from "@/shared/schema"
 import { type Source, detectSource, originPatternFor } from "@/shared/source"
@@ -129,6 +130,8 @@ export function Brief() {
           provider: msg.provider,
           model: msg.model,
           latencyMs: msg.latencyMs,
+          inputTokens: msg.inputTokens,
+          outputTokens: msg.outputTokens,
           tabId: tab.id ?? -1,
         }
         setState((prev) =>
@@ -211,6 +214,7 @@ export function Brief() {
           />
         ) : null}
       </div>
+      {state.kind === "done" ? <MetaLine meta={state.meta} /> : null}
       {(state.kind === "running" || state.kind === "done") &&
       state.paywall.suspected &&
       !state.paywall.dismissed ? (
@@ -255,6 +259,27 @@ export function Brief() {
       ) : null}
     </div>
   )
+}
+
+function MetaLine({ meta }: { meta: AnalysisMeta }) {
+  const parts: string[] = [PROVIDER_LABELS[meta.provider], meta.model]
+  if (meta.inputTokens != null && meta.outputTokens != null) {
+    parts.push(`${formatTokens(meta.inputTokens)}↑ ${formatTokens(meta.outputTokens)}↓`)
+  } else if (meta.latencyMs == null) {
+    parts.push("cached")
+  }
+  if (meta.latencyMs != null) parts.push(`${(meta.latencyMs / 1000).toFixed(1)}s`)
+  return (
+    <p className="text-[11px] text-neutral-500 dark:text-neutral-400" title="Analysis metadata">
+      {parts.join(" · ")}
+    </p>
+  )
+}
+
+function formatTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`
+  return String(n)
 }
 
 function TruncationBanner({

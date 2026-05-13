@@ -10,6 +10,7 @@ import {
   LLMError,
   type PartialHandler,
   TEST_ARTICLE,
+  type UsageHandler,
 } from "./client"
 import {
   ANALYSIS_SYSTEM_PROMPT,
@@ -59,7 +60,11 @@ export class OpenAICompatibleClient implements LLMClient {
     }
   }
 
-  async analyze(input: AnalyzeInput, onPartial: PartialHandler): Promise<AnalysisResult> {
+  async analyze(
+    input: AnalyzeInput,
+    onPartial: PartialHandler,
+    onUsage?: UsageHandler,
+  ): Promise<AnalysisResult> {
     const argsAccum = await this.streamToolCallArgs({
       systemPrompt: ANALYSIS_SYSTEM_PROMPT,
       userContent: buildAnalysisUserMessage(input),
@@ -72,6 +77,7 @@ export class OpenAICompatibleClient implements LLMClient {
         const validated = PartialAnalysisResult.safeParse(coerceAnalysis(partial))
         if (validated.success) onPartial(validated.data)
       },
+      onUsage,
     })
 
     const final = parseFinalJson(argsAccum, this.config.label)
@@ -175,6 +181,7 @@ export class OpenAICompatibleClient implements LLMClient {
     toolName: string
     maxTokens: number
     onPartialArgs: (accumulated: string) => void
+    onUsage?: UsageHandler
   }): Promise<string> {
     const body = {
       model: this.config.model,
@@ -185,6 +192,7 @@ export class OpenAICompatibleClient implements LLMClient {
       tools: [args.tool],
       tool_choice: { type: "function", function: { name: args.toolName } },
       stream: true,
+      stream_options: { include_usage: true },
       max_tokens: args.maxTokens,
     }
 
@@ -211,6 +219,14 @@ export class OpenAICompatibleClient implements LLMClient {
         parsed = JSON.parse(data)
       } catch {
         return
+      }
+      const usage = (parsed as { usage?: { prompt_tokens?: number; completion_tokens?: number } })
+        .usage
+      if (usage && args.onUsage) {
+        args.onUsage({
+          inputTokens: usage.prompt_tokens ?? 0,
+          outputTokens: usage.completion_tokens ?? 0,
+        })
       }
       const choices = (parsed as { choices?: Array<{ delta?: unknown }> }).choices
       const delta = choices?.[0]?.delta as

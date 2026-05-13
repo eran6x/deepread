@@ -11,6 +11,8 @@ export interface AnalysisMeta {
   provider: Provider
   model: string
   latencyMs: number | null
+  inputTokens: number | null
+  outputTokens: number | null
   tabId: number
 }
 

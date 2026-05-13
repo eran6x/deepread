@@ -16,8 +16,19 @@ export interface DefineInput {
 
 export type PartialHandler = (partial: PartialAnalysisResult) => void
 
+export interface TokenUsage {
+  inputTokens: number
+  outputTokens: number
+}
+
+export type UsageHandler = (usage: TokenUsage) => void
+
 export interface LLMClient {
-  analyze(input: AnalyzeInput, onPartial: PartialHandler): Promise<AnalysisResult>
+  analyze(
+    input: AnalyzeInput,
+    onPartial: PartialHandler,
+    onUsage?: UsageHandler,
+  ): Promise<AnalysisResult>
   define(input: DefineInput): Promise<DefinitionResult>
   test(): Promise<ProviderTestResult>
   ask(input: AskInput, onPartial: (accumulatedText: string) => void): Promise<string>

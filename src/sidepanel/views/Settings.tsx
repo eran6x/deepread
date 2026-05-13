@@ -11,6 +11,11 @@ import { send } from "../messaging"
 
 export function Settings() {
   const [settings, setSettings] = useState<AppSettings | null>(null)
+  const [configured, setConfigured] = useState<Record<Provider, boolean>>({
+    anthropic: false,
+    ollama: false,
+    deepseek: false,
+  })
 
   useEffect(() => {
     void refresh()
@@ -19,6 +24,15 @@ export function Settings() {
   async function refresh() {
     const next = await send<AppSettings>({ kind: "settings.get" })
     setSettings(next)
+    const [anthropicStatus, deepseekStatus] = await Promise.all([
+      send<ApiKeyStatus>({ kind: "secrets.status", provider: "anthropic" }),
+      send<ApiKeyStatus>({ kind: "secrets.status", provider: "deepseek" }),
+    ])
+    setConfigured({
+      anthropic: anthropicStatus.present,
+      ollama: Boolean(next.ollama.endpoint && next.ollama.model),
+      deepseek: deepseekStatus.present,
+    })
   }
 
   async function setProvider(provider: Provider) {
@@ -27,6 +41,9 @@ export function Settings() {
   }
 
   if (!settings) return <div className="p-4 text-sm text-neutral-500">Loading…</div>
+
+  const configuredCount = Object.values(configured).filter(Boolean).length
+  const showActiveHighlight = configuredCount >= 2
 
   return (
     <div className="space-y-6 p-4">
@@ -40,16 +57,26 @@ export function Settings() {
               key={p}
               type="button"
               onClick={() => setProvider(p)}
-              className={
-                settings.provider === p
-                  ? "rounded-md bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white dark:bg-white dark:text-neutral-900"
-                  : "rounded-md border border-neutral-300 bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:bg-neutral-800"
-              }
+              className={providerButtonClass(
+                settings.provider === p,
+                showActiveHighlight && settings.provider === p,
+              )}
             >
               {PROVIDER_LABELS[p]}
+              {showActiveHighlight && settings.provider === p ? (
+                <span className="ml-1.5 text-[10px] font-semibold uppercase tracking-wide">
+                  active
+                </span>
+              ) : null}
             </button>
           ))}
         </div>
+        {showActiveHighlight ? (
+          <p className="mt-2 text-[11px] text-neutral-500 dark:text-neutral-400">
+            You have {configuredCount} providers configured. The green one is currently used for
+            analysis.
+          </p>
+        ) : null}
       </section>
 
       {settings.provider === "anthropic" && <AnthropicSection />}
@@ -72,6 +99,16 @@ export function Settings() {
       </section>
     </div>
   )
+}
+
+function providerButtonClass(active: boolean, useActiveHighlight: boolean): string {
+  if (active && useActiveHighlight) {
+    return "rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white shadow-[0_0_0_2px_rgba(16,185,129,0.25)] dark:bg-emerald-500 dark:text-white"
+  }
+  if (active) {
+    return "rounded-md bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white dark:bg-white dark:text-neutral-900"
+  }
+  return "rounded-md border border-neutral-300 bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:bg-neutral-800"
 }
 
 function ReadingSpeedSection({

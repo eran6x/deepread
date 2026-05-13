@@ -30,7 +30,7 @@ import {
   setCachedArticle,
   setCachedDefinition,
 } from "./cache/analysis"
-import { appendSession, appendWpmSample, getStatsSummary } from "./cache/stats"
+import { appendSession, appendTokenSample, appendWpmSample, getStatsSummary } from "./cache/stats"
 import { LLMError } from "./llm/client"
 import { createLLMClient } from "./llm/factory"
 import { getSecret, getSecretStatus, getSettings, setSecret, updateSettings } from "./settings"
@@ -246,6 +246,8 @@ chrome.runtime.onConnect.addListener((port) => {
           provider,
           model,
           latencyMs: null,
+          inputTokens: null,
+          outputTokens: null,
         })
         return
       }
@@ -273,11 +275,27 @@ chrome.runtime.onConnect.addListener((port) => {
       status("calling-llm")
       status("streaming")
       const startedAt = Date.now()
+      let lastUsage: { inputTokens: number; outputTokens: number } | null = null
       const result = await client.analyze(
         { title: article.title, url: article.url, text: article.text },
         (partial) => send({ kind: "analysis.partial", result: partial }),
+        (usage) => {
+          lastUsage = usage
+        },
       )
       const latencyMs = Date.now() - startedAt
+
+      if (lastUsage) {
+        const usage: { inputTokens: number; outputTokens: number } = lastUsage
+        await appendTokenSample({
+          contentHash,
+          provider,
+          model,
+          inputTokens: usage.inputTokens,
+          outputTokens: usage.outputTokens,
+          ts: Date.now(),
+        })
+      }
 
       await setCachedAnalysis(contentHash, result)
       send({
@@ -288,6 +306,8 @@ chrome.runtime.onConnect.addListener((port) => {
         provider,
         model,
         latencyMs,
+        inputTokens: lastUsage ? (lastUsage as { inputTokens: number }).inputTokens : null,
+        outputTokens: lastUsage ? (lastUsage as { outputTokens: number }).outputTokens : null,
       })
       status("done")
     } catch (err) {

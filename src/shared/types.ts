@@ -149,6 +149,8 @@ export type PortMessage =
       provider: Provider
       model: string
       latencyMs: number | null
+      inputTokens: number | null
+      outputTokens: number | null
     }
   | { kind: "analysis.error"; reason: string }
   | { kind: "analysis.status"; phase: AnalysisPhase }

@@ -11,6 +11,7 @@ import {
   LLMError,
   type PartialHandler,
   TEST_ARTICLE,
+  type UsageHandler,
 } from "./client"
 import {
   ANALYSIS_SYSTEM_PROMPT,
@@ -33,7 +34,11 @@ export class DirectAnthropicClient implements LLMClient {
     })
   }
 
-  async analyze(input: AnalyzeInput, onPartial: PartialHandler): Promise<AnalysisResult> {
+  async analyze(
+    input: AnalyzeInput,
+    onPartial: PartialHandler,
+    onUsage?: UsageHandler,
+  ): Promise<AnalysisResult> {
     let stream: ReturnType<Anthropic["messages"]["stream"]>
     try {
       stream = this.client.messages.stream({
@@ -69,6 +74,13 @@ export class DirectAnthropicClient implements LLMClient {
     const toolUse = finalMessage.content.find((b) => b.type === "tool_use")
     if (!toolUse || toolUse.type !== "tool_use") {
       throw new LLMError("Model did not return a tool call", undefined, "schema")
+    }
+
+    if (onUsage && finalMessage.usage) {
+      onUsage({
+        inputTokens: finalMessage.usage.input_tokens ?? 0,
+        outputTokens: finalMessage.usage.output_tokens ?? 0,
+      })
     }
 
     const validated = AnalysisResult.safeParse(coerceAnalysis(toolUse.input))

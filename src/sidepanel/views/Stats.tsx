@@ -1,5 +1,6 @@
 import type { RecentArticle } from "@/background/cache/analysis"
-import type { StatsSummary } from "@/background/cache/stats"
+import type { StatsSummary, TokenUsageSummary } from "@/background/cache/stats"
+import { PROVIDER_LABELS } from "@/shared/constants"
 import { useEffect, useState } from "react"
 import { send } from "../messaging"
 
@@ -37,6 +38,8 @@ export function Stats() {
   return (
     <div className="space-y-5 p-4">
       <HistorySection items={history} />
+
+      <TokenUsageSection tokens={summary.tokens} />
 
       {hasReadingData ? (
         <>
@@ -114,6 +117,53 @@ function HistorySection({ items }: { items: RecentArticle[] }) {
   )
 }
 
+function TokenUsageSection({ tokens }: { tokens: TokenUsageSummary }) {
+  const total = tokens.totalInputTokens + tokens.totalOutputTokens
+  return (
+    <section>
+      <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+        Tokens used
+      </h2>
+      {total === 0 ? (
+        <p className="text-xs text-neutral-500 dark:text-neutral-400">
+          No analyses recorded yet. Run an analysis to see token usage.
+        </p>
+      ) : (
+        <>
+          <div className="grid grid-cols-3 gap-2">
+            <Stat label="Input" value={formatNumber(tokens.totalInputTokens)} sub="tokens" />
+            <Stat label="Output" value={formatNumber(tokens.totalOutputTokens)} sub="tokens" />
+            <Stat
+              label="Analyses"
+              value={tokens.totalAnalyses}
+              sub={tokens.totalAnalyses === 1 ? "run" : "runs"}
+            />
+          </div>
+          {tokens.byProvider.length > 1 ? (
+            <ul className="mt-2 space-y-1 text-[11px] text-neutral-600 dark:text-neutral-400">
+              {tokens.byProvider.map((p) => (
+                <li key={p.provider} className="flex items-center justify-between gap-2">
+                  <span>{PROVIDER_LABELS[p.provider]}</span>
+                  <span className="tabular-nums">
+                    {formatNumber(p.inputTokens + p.outputTokens)} ({p.analyses}{" "}
+                    {p.analyses === 1 ? "run" : "runs"})
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </>
+      )}
+    </section>
+  )
+}
+
+function formatNumber(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`
+  return String(n)
+}
+
 function hostnameOrUrl(url: string): string {
   try {
     return new URL(url).hostname
@@ -134,7 +184,15 @@ function formatRelative(ts: number): string {
   return new Date(ts).toISOString().slice(0, 10)
 }
 
-function Stat({ label, value, sub }: { label: string; value: number; sub?: string }) {
+function Stat({
+  label,
+  value,
+  sub,
+}: {
+  label: string
+  value: number | string
+  sub?: string
+}) {
   return (
     <div className="rounded-md border border-neutral-200 p-2 text-center dark:border-neutral-800">
       <div className="text-[11px] uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
