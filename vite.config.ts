@@ -4,9 +4,10 @@ import tailwindcss from "@tailwindcss/vite"
 import { crx } from "@crxjs/vite-plugin"
 import { fileURLToPath } from "node:url"
 import manifest from "./src/manifest.json"
+import pkg from "./package.json"
 
 export default defineConfig({
-  plugins: [react(), tailwindcss(), crx({ manifest })],
+  plugins: [react(), tailwindcss(), crx({ manifest: { ...manifest, version: pkg.version } })],
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),

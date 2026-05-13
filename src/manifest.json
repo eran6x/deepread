@@ -1,7 +1,6 @@
 {
   "manifest_version": 3,
   "name": "Deepread",
-  "version": "0.1.0",
   "description": "Read faster and understand more.",
   "permissions": ["activeTab", "storage", "sidePanel", "scripting"],
   "optional_host_permissions": ["http://*/*", "https://*/*"],
