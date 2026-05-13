@@ -2,11 +2,12 @@ import type { AppSettings } from "@/shared/types"
 import { useEffect, useState } from "react"
 import { send } from "./messaging"
 import { Brief } from "./views/Brief"
+import { Help } from "./views/Help"
 import { Onboarding } from "./views/Onboarding"
 import { Settings } from "./views/Settings"
 import { Stats } from "./views/Stats"
 
-type Tab = "brief" | "stats" | "settings"
+type Tab = "brief" | "stats" | "settings" | "help"
 
 export function App() {
   const [tab, setTab] = useState<Tab>("brief")
@@ -38,7 +39,7 @@ export function App() {
             alpha
           </span>
         </div>
-        <nav className="flex gap-1 text-sm">
+        <nav className="flex items-center gap-1 text-sm">
           <TabButton active={tab === "brief"} onClick={() => setTab("brief")}>
             Brief
           </TabButton>
@@ -48,10 +49,31 @@ export function App() {
           <TabButton active={tab === "settings"} onClick={() => setTab("settings")}>
             Settings
           </TabButton>
+          <button
+            type="button"
+            onClick={() => setTab("help")}
+            aria-label="Help"
+            title="Help"
+            className={
+              tab === "help"
+                ? "ml-1 flex h-6 w-6 items-center justify-center rounded-full border border-neutral-300 text-neutral-900 dark:border-neutral-600 dark:text-white"
+                : "ml-1 flex h-6 w-6 items-center justify-center rounded-full border border-neutral-300 text-neutral-500 hover:text-neutral-800 dark:border-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200"
+            }
+          >
+            ?
+          </button>
         </nav>
       </header>
       <main className="flex-1 overflow-y-auto">
-        {tab === "brief" ? <Brief /> : tab === "stats" ? <Stats /> : <Settings />}
+        {tab === "brief" ? (
+          <Brief />
+        ) : tab === "stats" ? (
+          <Stats />
+        ) : tab === "settings" ? (
+          <Settings />
+        ) : (
+          <Help />
+        )}
       </main>
     </div>
   )
