@@ -1,6 +1,6 @@
 {
   "name": "deepread",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Read faster and understand more.",
   "type": "module",
@@ -21,6 +21,7 @@
     "@mozilla/readability": "^0.5.0",
     "dexie": "^4.0.10",
     "partial-json": "^0.1.7",
+    "pdfjs-dist": "^5.7.284",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "zod": "^3.23.8",

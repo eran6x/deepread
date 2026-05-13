@@ -1,6 +1,9 @@
 import type { Provider } from "./constants"
 import type { FeedbackEntry } from "./feedback"
 import type { AnalysisResult, DefinitionResult, PartialAnalysisResult } from "./schema"
+import type { Source } from "./source"
+
+export type { Source }
 
 export interface OllamaConfig {
   endpoint: string
@@ -74,8 +77,9 @@ export type RuntimeMessage =
   | { kind: "extract.request" }
   | { kind: "extract.response"; article: ExtractedArticle }
   | { kind: "extract.error"; reason: string }
-  | { kind: "analyze.start"; tabId: number }
+  | { kind: "analyze.start"; source: Source }
   | { kind: "analyze.cancel" }
+  | { kind: "extract.pdf.request"; url: string }
   | {
       kind: "ask.start"
       contentHash: string
@@ -149,6 +153,11 @@ export type PortMessage =
   | { kind: "analysis.error"; reason: string }
   | { kind: "analysis.status"; phase: AnalysisPhase }
   | { kind: "analysis.paywall"; suspected: boolean; reason: string | null }
+  | { kind: "analysis.truncated"; originalLength: number; truncatedLength: number }
+
+export type PdfExtractResult =
+  | { ok: true; article: ExtractedArticle }
+  | { ok: false; reason: string }
 
 export type AnalysisPhase =
   | "idle"

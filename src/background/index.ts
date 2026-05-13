@@ -8,9 +8,11 @@ import {
 } from "@/shared/constants"
 import { hostnameOf, isSensitiveHost, matchesPattern } from "@/shared/domains"
 import { approxWordCount } from "@/shared/feedback"
+import type { Source } from "@/shared/source"
 import type {
   AnalysisPhase,
   ExtractedArticle,
+  PdfExtractResult,
   PortMessage,
   ProviderTestResult,
   RuntimeMessage,
@@ -32,6 +34,7 @@ import { appendSession, appendWpmSample, getStatsSummary } from "./cache/stats"
 import { LLMError } from "./llm/client"
 import { createLLMClient } from "./llm/factory"
 import { getSecret, getSecretStatus, getSettings, setSecret, updateSettings } from "./settings"
+import { GoogleDocError, extractGoogleDoc } from "./sources/gdoc"
 
 chrome.runtime.onInstalled.addListener(() => {
   // With a default_popup set, clicking the action opens the popup instead of
@@ -181,24 +184,44 @@ chrome.runtime.onConnect.addListener((port) => {
     const status = (phase: AnalysisPhase) => send({ kind: "analysis.status", phase })
 
     try {
+      const source = msg.source
       // Pre-flight privacy guard
-      const tab = await chrome.tabs.get(msg.tabId)
-      const url = tab.url ?? ""
+      const sourceUrl =
+        source.kind === "html" ? ((await chrome.tabs.get(source.tabId)).url ?? "") : source.url
       const settings = await getSettings()
-      const host = hostnameOf(url)
-      if (host && !isAllowedHost(host, url, settings.privacy)) {
+      const host = hostnameOf(sourceUrl)
+      if (host && !isAllowedHost(host, sourceUrl, settings.privacy)) {
         send({ kind: "analysis.error", reason: "blocked_sensitive_domain" })
         return
       }
 
       status("extracting")
-      const article = await requestExtraction(msg.tabId)
+      let article: ExtractedArticle
+      try {
+        article = await extractForSource(source)
+      } catch (err) {
+        if (err instanceof GoogleDocError) {
+          send({ kind: "analysis.error", reason: err.reason })
+          return
+        }
+        throw err
+      }
 
       send({
         kind: "analysis.paywall",
         suspected: article.paywallSuspected,
         reason: article.paywallReason,
       })
+
+      if (article.text.length > DEFAULTS.maxInputChars) {
+        const originalLength = article.text.length
+        article = { ...article, text: article.text.slice(0, DEFAULTS.maxInputChars) }
+        send({
+          kind: "analysis.truncated",
+          originalLength,
+          truncatedLength: DEFAULTS.maxInputChars,
+        })
+      }
 
       const contentHash = await hashText(article.text)
       await setCachedArticle({
@@ -359,4 +382,22 @@ async function requestExtraction(tabId: number): Promise<ExtractedArticle> {
   if (response.kind === "extract.response") return response.article
   if (response.kind === "extract.error") throw new Error(`Extraction failed: ${response.reason}`)
   throw new Error("Unexpected extraction response")
+}
+
+async function extractForSource(source: Source): Promise<ExtractedArticle> {
+  if (source.kind === "html") return requestExtraction(source.tabId)
+  if (source.kind === "gdoc") return extractGoogleDoc(source.url)
+  return requestPdfExtraction(source.url)
+}
+
+async function requestPdfExtraction(url: string): Promise<ExtractedArticle> {
+  const result = (await chrome.runtime.sendMessage({
+    kind: "extract.pdf.request",
+    url,
+  } satisfies RuntimeMessage)) as PdfExtractResult | undefined
+  if (!result) {
+    throw new Error("PDF extraction unavailable. Open the side panel and try again.")
+  }
+  if (!result.ok) throw new Error(`PDF extraction failed: ${result.reason}`)
+  return result.article
 }

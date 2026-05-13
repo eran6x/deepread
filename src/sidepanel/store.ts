@@ -1,5 +1,6 @@
 import type { Provider } from "@/shared/constants"
 import type { AnalysisResult } from "@/shared/schema"
+import type { Source } from "@/shared/source"
 import type { AnalysisPhase, ConversationTurn, PartialAnalysisResult } from "@/shared/types"
 import { create } from "zustand"
 import type { ArticleMeta } from "./format"
@@ -25,6 +26,20 @@ export const NO_PAYWALL: PaywallNotice = {
   dismissed: false,
 }
 
+export interface TruncationNotice {
+  truncated: boolean
+  originalLength: number
+  truncatedLength: number
+  dismissed: boolean
+}
+
+export const NO_TRUNCATION: TruncationNotice = {
+  truncated: false,
+  originalLength: 0,
+  truncatedLength: 0,
+  dismissed: false,
+}
+
 export type BriefState =
   | { kind: "idle" }
   | {
@@ -32,14 +47,18 @@ export type BriefState =
       phase: AnalysisPhase
       partial: PartialAnalysisResult
       article: ArticleMeta
+      source: Source
       paywall: PaywallNotice
+      truncation: TruncationNotice
     }
   | {
       kind: "done"
       result: AnalysisResult
       article: ArticleMeta
       meta: AnalysisMeta
+      source: Source
       paywall: PaywallNotice
+      truncation: TruncationNotice
     }
   | { kind: "error"; reason: string }
 

@@ -12,6 +12,9 @@ export default defineConfig({
       "@": fileURLToPath(new URL("./src", import.meta.url)),
     },
   },
+  optimizeDeps: {
+    exclude: ["pdfjs-dist"],
+  },
   build: {
     target: "es2022",
     sourcemap: true,

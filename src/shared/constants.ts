@@ -32,6 +32,8 @@ export const DEFAULTS = {
   dimOpacity: 0.6,
   pacerStyle: "band" as "band" | "underline" | "chunk",
   longPageTokenThreshold: 15_000,
+  /** Hard cap on extracted text fed to the analysis model (chars, not tokens). */
+  maxInputChars: 50_000,
   analysisCacheTtlMs: 1000 * 60 * 60 * 24 * 7,
   definitionCacheTtlMs: 1000 * 60 * 60 * 24 * 365,
   provider: "anthropic" as Provider,

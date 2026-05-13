@@ -1,10 +1,11 @@
 import { PORTS } from "@/shared/constants"
+import type { Source } from "@/shared/source"
 import type { AskPortMessage, PortMessage, RuntimeMessage } from "@/shared/types"
 
 export type AnalysisListener = (msg: PortMessage) => void
 
 export function openAnalysisPort(onMessage: AnalysisListener): {
-  start: (tabId: number) => void
+  start: (source: Source) => void
   cancel: () => void
   close: () => void
 } {
@@ -12,8 +13,8 @@ export function openAnalysisPort(onMessage: AnalysisListener): {
   port.onMessage.addListener(onMessage)
 
   return {
-    start: (tabId: number) => {
-      port.postMessage({ kind: "analyze.start", tabId } satisfies RuntimeMessage)
+    start: (source: Source) => {
+      port.postMessage({ kind: "analyze.start", source } satisfies RuntimeMessage)
     },
     cancel: () => {
       port.postMessage({ kind: "analyze.cancel" } satisfies RuntimeMessage)

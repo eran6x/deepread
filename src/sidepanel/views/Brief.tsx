@@ -1,10 +1,18 @@
 import { type FeedbackEntry, buildMetrics } from "@/shared/feedback"
 import type { AnalysisResult } from "@/shared/schema"
+import { type Source, detectSource, originPatternFor } from "@/shared/source"
 import type { AnalysisPhase, AppSettings, PartialAnalysisResult } from "@/shared/types"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { type ArticleMeta, downloadMarkdown, formatAsMarkdown, slug } from "../format"
 import { getActiveTab, openAnalysisPort, send } from "../messaging"
-import { type AnalysisMeta, NO_PAYWALL, type PaywallNotice, useSidepanelStore } from "../store"
+import {
+  type AnalysisMeta,
+  NO_PAYWALL,
+  NO_TRUNCATION,
+  type PaywallNotice,
+  type TruncationNotice,
+  useSidepanelStore,
+} from "../store"
 import { AskSection } from "./AskSection"
 
 export function Brief() {
@@ -21,15 +29,59 @@ export function Brief() {
     }
   }, [resetIfRunning])
 
+  useEffect(() => {
+    const listener = (
+      msg: { kind?: string; url?: string },
+      _sender: chrome.runtime.MessageSender,
+      sendResponse: (response: unknown) => void,
+    ) => {
+      if (msg?.kind !== "extract.pdf.request" || typeof msg.url !== "string") return false
+      void (async () => {
+        try {
+          const { extractPdf } = await import("../sources/pdf")
+          const article = await extractPdf(msg.url as string)
+          sendResponse({ ok: true, article })
+        } catch (err) {
+          sendResponse({ ok: false, reason: err instanceof Error ? err.message : String(err) })
+        }
+      })()
+      return true
+    }
+    chrome.runtime.onMessage.addListener(listener)
+    return () => chrome.runtime.onMessage.removeListener(listener)
+  }, [])
+
   async function startAnalysis() {
     const tab = await getActiveTab()
-    if (!tab?.id) {
+    if (!tab?.id || !tab.url) {
       setState({ kind: "error", reason: "No active tab" })
       return
     }
+    const source = detectSource(tab.url, tab.id)
+
+    if (source.kind !== "html") {
+      const pattern = originPatternFor(source)
+      if (pattern) {
+        let granted = false
+        try {
+          granted = await chrome.permissions.request({ origins: [pattern] })
+        } catch (err) {
+          setState({
+            kind: "error",
+            reason: `permission_denied: ${err instanceof Error ? err.message : String(err)}`,
+          })
+          return
+        }
+        if (!granted) {
+          setState({ kind: "error", reason: "permission_denied" })
+          return
+        }
+      }
+    }
+
     const article: ArticleMeta = {
       title: tab.title ?? "Untitled",
-      url: tab.url ?? "",
+      url: tab.url,
     }
 
     setState({
@@ -37,7 +89,9 @@ export function Brief() {
       phase: "extracting",
       partial: {},
       article,
+      source,
       paywall: NO_PAYWALL,
+      truncation: NO_TRUNCATION,
     })
 
     const port = openAnalysisPort((msg) => {
@@ -51,6 +105,20 @@ export function Brief() {
             ? {
                 ...prev,
                 paywall: { suspected: msg.suspected, reason: msg.reason, dismissed: false },
+              }
+            : prev,
+        )
+      } else if (msg.kind === "analysis.truncated") {
+        setState((prev) =>
+          prev.kind === "running"
+            ? {
+                ...prev,
+                truncation: {
+                  truncated: true,
+                  originalLength: msg.originalLength,
+                  truncatedLength: msg.truncatedLength,
+                  dismissed: false,
+                },
               }
             : prev,
         )
@@ -70,16 +138,26 @@ export function Brief() {
                 result: msg.result,
                 article: prev.article,
                 meta,
+                source: prev.source,
                 paywall: prev.paywall,
+                truncation: prev.truncation,
               }
-            : { kind: "done", result: msg.result, article, meta, paywall: NO_PAYWALL },
+            : {
+                kind: "done",
+                result: msg.result,
+                article,
+                meta,
+                source,
+                paywall: NO_PAYWALL,
+                truncation: NO_TRUNCATION,
+              },
         )
       } else if (msg.kind === "analysis.error") {
         setState({ kind: "error", reason: msg.reason })
       }
     })
     portRef.current = port
-    port.start(tab.id)
+    port.start(source)
   }
 
   if (state.kind === "idle") {
@@ -128,6 +206,7 @@ export function Brief() {
             result={state.result}
             article={state.article}
             meta={state.meta}
+            source={state.source}
             onClear={clear}
           />
         ) : null}
@@ -141,6 +220,20 @@ export function Brief() {
             setState((prev) =>
               prev.kind === "running" || prev.kind === "done"
                 ? { ...prev, paywall: { ...prev.paywall, dismissed: true } }
+                : prev,
+            )
+          }
+        />
+      ) : null}
+      {(state.kind === "running" || state.kind === "done") &&
+      state.truncation.truncated &&
+      !state.truncation.dismissed ? (
+        <TruncationBanner
+          truncation={state.truncation}
+          onDismiss={() =>
+            setState((prev) =>
+              prev.kind === "running" || prev.kind === "done"
+                ? { ...prev, truncation: { ...prev.truncation, dismissed: true } }
                 : prev,
             )
           }
@@ -162,6 +255,40 @@ export function Brief() {
       ) : null}
     </div>
   )
+}
+
+function TruncationBanner({
+  truncation,
+  onDismiss,
+}: {
+  truncation: TruncationNotice
+  onDismiss: () => void
+}) {
+  const pct = Math.round((truncation.truncatedLength / truncation.originalLength) * 100)
+  return (
+    <div className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
+      <div className="flex-1">
+        <p className="font-medium">Document truncated</p>
+        <p className="mt-0.5 text-xs">
+          Analyzed first {pct}% of the document ({formatChars(truncation.truncatedLength)} of{" "}
+          {formatChars(truncation.originalLength)} chars). Analysis may miss content past the cap.
+        </p>
+      </div>
+      <button
+        type="button"
+        onClick={onDismiss}
+        aria-label="Dismiss truncation warning"
+        className="-m-1 rounded p-1 text-amber-700 hover:bg-amber-100 dark:text-amber-300 dark:hover:bg-amber-900"
+      >
+        ×
+      </button>
+    </div>
+  )
+}
+
+function formatChars(n: number): string {
+  if (n >= 1000) return `${Math.round(n / 1000)}k`
+  return String(n)
 }
 
 function PaywallBanner({
@@ -207,11 +334,13 @@ function ActionBar({
   result,
   article,
   meta,
+  source,
   onClear,
 }: {
   result: AnalysisResult
   article: ArticleMeta
   meta: AnalysisMeta
+  source: Source
   onClear: () => void
 }) {
   const [copied, setCopied] = useState(false)
@@ -255,7 +384,9 @@ function ActionBar({
   return (
     <div className="flex shrink-0 flex-col items-end gap-1">
       <div className="flex gap-1.5">
-        <ActionButton onClick={openInReader}>Open reader</ActionButton>
+        {source.kind === "html" ? (
+          <ActionButton onClick={openInReader}>Open reader</ActionButton>
+        ) : null}
         <ActionButton onClick={copy}>{copied ? "Copied" : "Copy"}</ActionButton>
         <ActionButton onClick={save}>Save .md</ActionButton>
         <ActionButton onClick={onClear}>New</ActionButton>
@@ -479,5 +610,11 @@ function humanizeError(reason: string): string {
     return "This page doesn't look like an article. Open a long-form article and try again."
   if (reason.includes("Could not establish connection"))
     return "Can't reach this page. Reload the tab and try again."
+  if (reason.includes("permission_denied"))
+    return "Permission denied. The extension needs access to this site to read it."
+  if (reason.includes("gdoc_not_authorized"))
+    return "This Google Doc isn't accessible with your current browser session. Open it in your browser first, or ask the owner to share it."
+  if (reason.includes("gdoc_not_found")) return "Google Doc not found."
+  if (reason.includes("invalid_url")) return "This doesn't look like a supported document URL."
   return reason
 }
